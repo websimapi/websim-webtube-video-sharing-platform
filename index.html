@@ -326,47 +326,175 @@
             };
 
             const extractVideoFrames = async (videoFile) => {
-                return new Promise((resolve) => {
+                return new Promise((resolve, reject) => {
                     const video = document.createElement('video');
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     const frames = [];
+                    
+                    // Add video to DOM for better browser compatibility
+                    video.style.display = 'none';
+                    document.body.appendChild(video);
                     
                     video.onloadedmetadata = () => {
                         const duration = Math.min(video.duration, 600); // Max 10 minutes
                         const frameInterval = 15; // Every 15 seconds
                         const totalFrames = Math.floor(duration / frameInterval);
                         
-                        canvas.width = 640;
-                        canvas.height = 360;
+                        canvas.width = 320;
+                        canvas.height = 180;
                         
                         let frameCount = 0;
                         
-                        const captureFrame = (time) => {
+                        const captureFrame = () => {
+                            if (frameCount >= totalFrames) {
+                                document.body.removeChild(video);
+                                URL.revokeObjectURL(video.src);
+                                resolve(frames);
+                                return;
+                            }
+                            
+                            const time = frameCount * frameInterval;
                             video.currentTime = time;
+                            
                             video.onseeked = () => {
-                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                                frames.push(dataUrl);
-                                frameCount++;
-                                
-                                if (frameCount < totalFrames) {
-                                    const nextTime = frameCount * frameInterval;
-                                    captureFrame(nextTime);
-                                } else {
-                                    resolve(frames);
+                                try {
+                                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                                    frames.push(dataUrl);
+                                    frameCount++;
+                                    setTimeout(captureFrame, 100); // Small delay for stability
+                                } catch (error) {
+                                    console.error('Frame capture error:', error);
+                                    frameCount++;
+                                    setTimeout(captureFrame, 100);
                                 }
                             };
                         };
                         
                         if (totalFrames > 0) {
-                            captureFrame(0);
+                            captureFrame();
                         } else {
+                            document.body.removeChild(video);
+                            URL.revokeObjectURL(video.src);
                             resolve([]);
                         }
                     };
                     
+                    video.onerror = (error) => {
+                        document.body.removeChild(video);
+                        URL.revokeObjectURL(video.src);
+                        reject(new Error('Failed to load video for processing'));
+                    };
+                    
                     video.src = URL.createObjectURL(videoFile);
+                    video.load();
+                });
+            };
+
+            const handleFileUpload = async (file) => {
+                if (!file) return;
+                
+                console.log('Starting upload for file:', file.name);
+                
+                if (!file.type.startsWith('video/')) {
+                    setError('Please upload a video file');
+                    return;
+                }
+                
+                if (file.size > 100 * 1024 * 1024) { // 100MB limit
+                    setError('Video file too large (max 100MB)');
+                    return;
+                }
+
+                if (!uploadForm.title.trim()) {
+                    setError('Please enter a video title');
+                    return;
+                }
+
+                setUploading(true);
+                setError('');
+                setUploadProgress({ progress: 10, status: 'Processing video...' });
+
+                try {
+                    // Extract frames for moderation
+                    console.log('Extracting frames...');
+                    const frames = await extractVideoFrames(file);
+                    console.log('Extracted frames:', frames.length);
+                    
+                    if (frames.length > 0) {
+                        await moderateContent(frames);
+                    }
+
+                    setUploadProgress({ progress: 80, status: 'Uploading video...' });
+                    console.log('Uploading file...');
+
+                    // Upload the video file
+                    const videoUrl = await websim.upload(file);
+                    console.log('Upload successful, URL:', videoUrl);
+                    
+                    setUploadProgress({ progress: 90, status: 'Saving to database...' });
+
+                    // Get video duration
+                    const duration = await getVideoDuration(file);
+
+                    // Create video record
+                    const videoData = {
+                        title: uploadForm.title.trim(),
+                        description: uploadForm.description.trim(),
+                        video_url: videoUrl,
+                        duration: duration,
+                        file_size: file.size,
+                        thumbnail_url: frames.length > 0 ? frames[0] : null
+                    };
+
+                    console.log('Creating database record...');
+                    await room.collection('video').create(videoData);
+                    
+                    // Save to local storage
+                    saveLocalVideo(videoData);
+
+                    setUploadProgress({ progress: 100, status: 'Upload complete!' });
+                    
+                    // Reset form
+                    setUploadForm({ title: '', description: '' });
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                    }
+                    
+                    setTimeout(() => {
+                        setUploading(false);
+                        setUploadProgress({ progress: 0, status: '' });
+                    }, 2000);
+
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    setError(error.message || 'Upload failed. Please try again.');
+                    setUploading(false);
+                    setUploadProgress({ progress: 0, status: '' });
+                }
+            };
+
+            const getVideoDuration = (file) => {
+                return new Promise((resolve, reject) => {
+                    const video = document.createElement('video');
+                    video.style.display = 'none';
+                    document.body.appendChild(video);
+                    
+                    video.onloadedmetadata = () => {
+                        const duration = Math.round(video.duration);
+                        document.body.removeChild(video);
+                        URL.revokeObjectURL(video.src);
+                        resolve(duration);
+                    };
+                    
+                    video.onerror = () => {
+                        document.body.removeChild(video);
+                        URL.revokeObjectURL(video.src);
+                        resolve(0); // Default to 0 if can't get duration
+                    };
+                    
+                    video.src = URL.createObjectURL(file);
                 });
             };
 
@@ -410,86 +538,6 @@
                 }
                 
                 return true;
-            };
-
-            const handleFileUpload = async (file) => {
-                if (!file) return;
-                
-                if (!file.type.startsWith('video/')) {
-                    setError('Please upload a video file');
-                    return;
-                }
-                
-                if (file.size > 100 * 1024 * 1024) { // 100MB limit
-                    setError('Video file too large (max 100MB)');
-                    return;
-                }
-
-                if (!uploadForm.title.trim()) {
-                    setError('Please enter a video title');
-                    return;
-                }
-
-                setUploading(true);
-                setError('');
-                setUploadProgress({ progress: 10, status: 'Extracting video frames...' });
-
-                try {
-                    // Extract frames for moderation
-                    const frames = await extractVideoFrames(file);
-                    
-                    if (frames.length > 0) {
-                        await moderateContent(frames);
-                    }
-
-                    setUploadProgress({ progress: 80, status: 'Uploading video...' });
-
-                    // Upload the video file
-                    const videoUrl = await websim.upload(file);
-                    
-                    setUploadProgress({ progress: 90, status: 'Saving to database...' });
-
-                    // Create video record
-                    const videoData = {
-                        title: uploadForm.title.trim(),
-                        description: uploadForm.description.trim(),
-                        video_url: videoUrl,
-                        duration: await getVideoDuration(file),
-                        file_size: file.size,
-                        thumbnail_url: frames.length > 0 ? frames[0] : null
-                    };
-
-                    await room.collection('video').create(videoData);
-                    
-                    // Save to local storage
-                    saveLocalVideo(videoData);
-
-                    setUploadProgress({ progress: 100, status: 'Upload complete!' });
-                    
-                    // Reset form
-                    setUploadForm({ title: '', description: '' });
-                    fileInputRef.current.value = '';
-                    
-                    setTimeout(() => {
-                        setUploading(false);
-                        setUploadProgress({ progress: 0, status: '' });
-                    }, 2000);
-
-                } catch (error) {
-                    setError(error.message || 'Upload failed');
-                    setUploading(false);
-                    setUploadProgress({ progress: 0, status: '' });
-                }
-            };
-
-            const getVideoDuration = (file) => {
-                return new Promise((resolve) => {
-                    const video = document.createElement('video');
-                    video.onloadedmetadata = () => {
-                        resolve(Math.round(video.duration));
-                    };
-                    video.src = URL.createObjectURL(file);
-                });
             };
 
             const handleDrop = (e) => {
@@ -720,4 +768,3 @@
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
-
