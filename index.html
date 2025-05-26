@@ -392,10 +392,98 @@
                 });
             };
 
+            const compressVideo = async (file) => {
+                return new Promise((resolve, reject) => {
+                    console.log('Starting video compression, original size:', formatFileSize(file.size));
+                    setUploadProgress({ progress: 15, status: 'Compressing video...' });
+                    
+                    const video = document.createElement('video');
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    video.style.display = 'none';
+                    document.body.appendChild(video);
+                    
+                    video.onloadedmetadata = () => {
+                        // Set canvas dimensions (compress to max 720p)
+                        const maxWidth = 1280;
+                        const maxHeight = 720;
+                        let { videoWidth, videoHeight } = video;
+                        
+                        if (videoWidth > maxWidth || videoHeight > maxHeight) {
+                            const ratio = Math.min(maxWidth / videoWidth, maxHeight / videoHeight);
+                            videoWidth *= ratio;
+                            videoHeight *= ratio;
+                        }
+                        
+                        canvas.width = videoWidth;
+                        canvas.height = videoHeight;
+                        
+                        const stream = canvas.captureStream(30); // 30 FPS
+                        const recorder = new MediaRecorder(stream, {
+                            mimeType: 'video/webm;codecs=vp9',
+                            videoBitsPerSecond: 1000000 // 1 Mbps
+                        });
+                        
+                        const chunks = [];
+                        recorder.ondataavailable = (e) => chunks.push(e.data);
+                        
+                        recorder.onstop = () => {
+                            const compressedBlob = new Blob(chunks, { type: 'video/webm' });
+                            console.log('Video compressed, new size:', formatFileSize(compressedBlob.size));
+                            document.body.removeChild(video);
+                            URL.revokeObjectURL(video.src);
+                            resolve(compressedBlob);
+                        };
+                        
+                        recorder.onerror = (error) => {
+                            console.error('Compression error:', error);
+                            document.body.removeChild(video);
+                            URL.revokeObjectURL(video.src);
+                            // Return original file if compression fails
+                            resolve(file);
+                        };
+                        
+                        let currentTime = 0;
+                        const duration = video.duration;
+                        const frameRate = 30;
+                        const frameInterval = 1 / frameRate;
+                        
+                        recorder.start();
+                        
+                        const drawFrame = () => {
+                            if (currentTime >= duration) {
+                                recorder.stop();
+                                return;
+                            }
+                            
+                            video.currentTime = currentTime;
+                            video.onseeked = () => {
+                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                currentTime += frameInterval;
+                                setTimeout(drawFrame, 1000 / frameRate);
+                            };
+                        };
+                        
+                        drawFrame();
+                    };
+                    
+                    video.onerror = () => {
+                        console.log('Compression failed, using original file');
+                        document.body.removeChild(video);
+                        URL.revokeObjectURL(video.src);
+                        resolve(file); // Return original file if compression fails
+                    };
+                    
+                    video.src = URL.createObjectURL(file);
+                    video.load();
+                });
+            };
+
             const handleFileUpload = async (file) => {
                 if (!file) return;
                 
-                console.log('Starting upload for file:', file.name);
+                console.log('Starting upload for file:', file.name, 'Size:', formatFileSize(file.size), 'Type:', file.type);
                 
                 if (!file.type.startsWith('video/')) {
                     setError('Please upload a video file');
@@ -417,8 +505,14 @@
                 setUploadProgress({ progress: 10, status: 'Processing video...' });
 
                 try {
-                    // Extract frames for moderation
-                    console.log('Extracting frames...');
+                    // Compress video first
+                    console.log('Compressing video...');
+                    const compressedFile = await compressVideo(file);
+                    console.log('Compression complete, proceeding with upload');
+                    
+                    // Extract frames for moderation from original file
+                    console.log('Extracting frames for moderation...');
+                    setUploadProgress({ progress: 25, status: 'Extracting frames for moderation...' });
                     const frames = await extractVideoFrames(file);
                     console.log('Extracted frames:', frames.length);
                     
@@ -426,16 +520,21 @@
                         await moderateContent(frames);
                     }
 
-                    setUploadProgress({ progress: 80, status: 'Uploading video...' });
-                    console.log('Uploading file...');
+                    setUploadProgress({ progress: 75, status: 'Uploading compressed video...' });
+                    console.log('Starting file upload to websim...');
+                    console.log('Upload file details:', {
+                        name: compressedFile.name || file.name,
+                        size: formatFileSize(compressedFile.size),
+                        type: compressedFile.type || file.type
+                    });
 
-                    // Upload the video file
-                    const videoUrl = await websim.upload(file);
-                    console.log('Upload successful, URL:', videoUrl);
+                    // Upload the compressed video file
+                    const videoUrl = await websim.upload(compressedFile);
+                    console.log('Upload successful! URL:', videoUrl);
                     
                     setUploadProgress({ progress: 90, status: 'Saving to database...' });
 
-                    // Get video duration
+                    // Get video duration from original file
                     const duration = await getVideoDuration(file);
 
                     // Create video record
@@ -444,12 +543,13 @@
                         description: uploadForm.description.trim(),
                         video_url: videoUrl,
                         duration: duration,
-                        file_size: file.size,
+                        file_size: compressedFile.size,
                         thumbnail_url: frames.length > 0 ? frames[0] : null
                     };
 
-                    console.log('Creating database record...');
+                    console.log('Creating database record with data:', videoData);
                     await room.collection('video').create(videoData);
+                    console.log('Database record created successfully');
                     
                     // Save to local storage
                     saveLocalVideo(videoData);
@@ -468,7 +568,11 @@
                     }, 2000);
 
                 } catch (error) {
-                    console.error('Upload error:', error);
+                    console.error('Upload error details:', {
+                        message: error.message,
+                        stack: error.stack,
+                        error: error
+                    });
                     setError(error.message || 'Upload failed. Please try again.');
                     setUploading(false);
                     setUploadProgress({ progress: 0, status: '' });
