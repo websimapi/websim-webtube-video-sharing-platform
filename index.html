@@ -557,9 +557,7 @@
 
             useEffect(() => {
                 setVideos(videoRecords.reverse()); // Show newest first
-                if (!databaseLoaded) {
-                    setDatabaseLoaded(true);
-                }
+                setDatabaseLoaded(true); // Mark database as loaded
                 loadLocalVideos();
             }, [videoRecords]);
 
@@ -568,11 +566,13 @@
                 if (stored) {
                     try {
                         const allVideos = JSON.parse(stored);
+                        // Filter out videos with blob URLs (broken/temporary URLs)
                         const validVideos = allVideos.filter(video => 
                             video.video_url && 
                             (video.video_url.startsWith('http://') || video.video_url.startsWith('https://'))
                         );
                         
+                        // Update localStorage with only valid videos
                         if (validVideos.length !== allVideos.length) {
                             localStorage.setItem('webtube_videos', JSON.stringify(validVideos));
                             console.log(`Cleaned up ${allVideos.length - validVideos.length} broken video URLs from localStorage`);
@@ -589,6 +589,7 @@
             };
 
             const saveLocalVideo = (videoData) => {
+                // Only save videos with valid HTTP URLs
                 if (!videoData.video_url || (!videoData.video_url.startsWith('http://') && !videoData.video_url.startsWith('https://'))) {
                     console.warn('Skipping save of video with invalid URL:', videoData.video_url);
                     return;
@@ -608,13 +609,14 @@
                     const ctx = canvas.getContext('2d');
                     const frames = [];
                     
+                    // Add video to DOM for better browser compatibility
                     video.style.display = 'none';
-                    video.crossOrigin = 'anonymous'; 
+                    video.crossOrigin = 'anonymous'; // Allow cross-origin video loading
                     document.body.appendChild(video);
                     
                     video.onloadedmetadata = () => {
-                        const duration = Math.min(video.duration, 600); 
-                        const frameInterval = 15; 
+                        const duration = Math.min(video.duration, 600); // Max 10 minutes
+                        const frameInterval = 15; // Every 15 seconds
                         const totalFrames = Math.floor(duration / frameInterval);
                         
                         canvas.width = 320;
@@ -638,7 +640,7 @@
                                     const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                                     frames.push(dataUrl);
                                     frameCount++;
-                                    setTimeout(captureFrame, 100); 
+                                    setTimeout(captureFrame, 100); // Small delay for stability
                                 } catch (error) {
                                     console.error('Frame capture error:', error);
                                     frameCount++;
@@ -710,7 +712,7 @@
                     return;
                 }
                 
-                if (file.size > 100 * 1024 * 1024) { 
+                if (file.size > 100 * 1024 * 1024) { // 100MB limit
                     setError('Video file too large (max 100MB)');
                     return;
                 }
@@ -725,22 +727,26 @@
                 setUploadProgress({ progress: 10, status: 'Processing video...' });
 
                 try {
+                    // Extract frames for moderation
+                    console.log('Extracting frames...');
                     const frames = await extractVideoFramesFromUrl(URL.createObjectURL(file));
                     console.log('Extracted frames:', frames.length);
                     
-                    let ageRating = 'E'; 
+                    let ageRating = 'E'; // Default rating
                     if (frames.length > 0) {
                         ageRating = await moderateContent(frames);
                     }
 
                     setUploadProgress({ progress: 80, status: 'Uploading video...' });
 
+                    // Upload the video file with retry logic
                     let videoUrl;
                     try {
-                        videoUrl = await uploadWithRetry(file, 3); 
+                        videoUrl = await uploadWithRetry(file, 3); // 3 retry attempts
                         if (!videoUrl || typeof videoUrl !== 'string') {
                             throw new Error('Upload failed - invalid response');
                         }
+                        // Ensure we only accept HTTP URLs, not blob URLs
                         if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
                             throw new Error('Upload failed - received invalid URL format');
                         }
@@ -751,8 +757,10 @@
 
                     console.log('Upload successful, URL:', videoUrl);
                     
+                    // Get video duration
                     const duration = await getVideoDuration(file);
 
+                    // Create video record
                     const videoData = {
                         title: uploadForm.title.trim(),
                         description: uploadForm.description.trim(),
@@ -763,8 +771,10 @@
                         age_rating: ageRating
                     };
 
+                    // Save to local storage first (always works)
                     saveLocalVideo(videoData);
 
+                    // Try to save to database with retries
                     try {
                         console.log('Creating database record...');
                         await createDatabaseRecord(videoData);
@@ -774,6 +784,7 @@
                         setUploadProgress({ progress: 100, status: 'Upload complete! (Saved locally - use resync to add to database)' });
                     }
                     
+                    // Reset form
                     setUploadForm({ title: '', description: '' });
                     if (fileInputRef.current) {
                         fileInputRef.current.value = '';
@@ -804,6 +815,7 @@
                         
                         const result = await websim.upload(file);
                         
+                        // Validate the result
                         if (!result) {
                             throw new Error('Upload returned null or undefined');
                         }
@@ -812,10 +824,12 @@
                             throw new Error('Upload returned non-string result');
                         }
                         
+                        // Check if result is HTML error page instead of URL
                         if (result.trim().startsWith('<') || result.includes('<!DOCTYPE')) {
                             throw new Error('Upload service returned HTML error page instead of URL');
                         }
                         
+                        // Validate URL format
                         if (!result.startsWith('http://') && !result.startsWith('https://')) {
                             throw new Error(`Invalid URL format received: ${result.substring(0, 50)}`);
                         }
@@ -826,10 +840,12 @@
                         lastError = error;
                         console.log(`Upload attempt ${attempt + 1} failed:`, error.message);
                         
+                        // Don't retry on the last attempt
                         if (attempt === maxRetries - 1) {
                             break;
                         }
                         
+                        // Calculate delay with exponential backoff, longer delay for HTML errors
                         const delay = baseDelay * Math.pow(2, attempt) * (error.message.includes('HTML') ? 2 : 1);
                         console.log(`Waiting ${delay}ms before retry...`);
                         
@@ -837,6 +853,7 @@
                     }
                 }
                 
+                // All retries failed, throw the last error
                 throw new Error(`Upload failed after ${maxRetries} attempts. Last error: ${lastError.message}`);
             };
 
@@ -856,7 +873,7 @@
                     video.onerror = () => {
                         document.body.removeChild(video);
                         URL.revokeObjectURL(video.src);
-                        resolve(0); 
+                        resolve(0); // Default to 0 if can't get duration
                     };
                     
                     video.src = URL.createObjectURL(file);
@@ -866,7 +883,7 @@
             const moderateContent = async (frames) => {
                 setUploadProgress({ progress: 30, status: 'Analyzing content for safety...' });
                 
-                let overallRating = 'E'; 
+                let overallRating = 'E'; // Start with Everyone rating
                 const ratingHierarchy = ['E', 'E10+', 'T', 'M', '18+'];
                 
                 for (let i = 0; i < frames.length; i++) {
@@ -904,10 +921,12 @@ Respond with JSON only: {
                         const result = JSON.parse(completion.content);
                         console.log(`Frame ${i + 1} analysis:`, result);
                         
+                        // Check if this frame got an 18+ rating
                         if (result.age_rating === "18+") {
                             throw new Error(`18+ content detected in frame ${i + 1}: ${result.reasoning}`);
                         }
                         
+                        // Update overall rating if this frame has a higher rating
                         const currentIndex = ratingHierarchy.indexOf(result.age_rating);
                         const overallIndex = ratingHierarchy.indexOf(overallRating);
                         if (currentIndex > overallIndex) {
@@ -952,8 +971,9 @@ Respond with JSON only: {
             };
 
             const getUserVideos = () => {
-                const currentUser = 'guest'; 
-                return localVideos; 
+                // Get current user's username (you can implement proper auth later)
+                const currentUser = 'guest'; // For now, assume guest user
+                return localVideos; // Return all local videos as user's videos
             };
 
             const getTotalDuration = () => {
@@ -983,6 +1003,7 @@ Respond with JSON only: {
                     return;
                 }
 
+                // Update local storage
                 const stored = localStorage.getItem('webtube_videos') || '[]';
                 const localVids = JSON.parse(stored);
                 const updatedVids = localVids.map(video => 
@@ -993,11 +1014,14 @@ Respond with JSON only: {
                 localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
                 setLocalVideos(updatedVids);
 
+                // If video is in database, delete and recreate it
                 const databaseVideo = videos.find(v => v.video_url === editingVideo.video_url);
                 if (databaseVideo) {
                     try {
+                        // Delete the old record
                         await room.collection('video').delete(databaseVideo.id);
                         
+                        // Create new record with updated data
                         await room.collection('video').create({
                             ...databaseVideo,
                             title: editForm.title.trim(),
@@ -1018,12 +1042,14 @@ Respond with JSON only: {
                     return;
                 }
 
+                // Remove from local storage
                 const stored = localStorage.getItem('webtube_videos') || '[]';
                 const localVids = JSON.parse(stored);
                 const updatedVids = localVids.filter(v => v.video_url !== video.video_url);
                 localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
                 setLocalVideos(updatedVids);
 
+                // If video is in database, try to remove it (might fail due to permissions)
                 const databaseVideo = videos.find(v => v.video_url === video.video_url);
                 if (databaseVideo) {
                     room.collection('video').delete(databaseVideo.id).catch(error => {
@@ -1036,10 +1062,11 @@ Respond with JSON only: {
                 try {
                     console.log('Resyncing video:', localVideo.title);
                     
+                    // Re-extract frames and moderate content
                     const frames = await extractVideoFramesFromUrl(localVideo.video_url);
                     console.log('Re-extracted frames for resync:', frames.length);
                     
-                    let ageRating = 'E'; 
+                    let ageRating = 'E'; // Default rating
                     if (frames.length > 0) {
                         ageRating = await moderateContent(frames);
                         console.log('New age rating for resync:', ageRating);
@@ -1052,7 +1079,7 @@ Respond with JSON only: {
                         duration: localVideo.duration,
                         file_size: localVideo.file_size,
                         thumbnail_url: localVideo.thumbnail_url,
-                        age_rating: ageRating 
+                        age_rating: ageRating // Use the newly calculated age rating
                     });
                     
                     console.log('Video resynced successfully with new age rating:', ageRating);
@@ -1063,9 +1090,7 @@ Respond with JSON only: {
             };
 
             const getLocalVideosNotInDatabase = () => {
-                if (!databaseLoaded) {
-                    return [];
-                }
+                if (!databaseLoaded) return []; // Don't show any videos as "not in database" until we've verified
                 const databaseUrls = new Set(videos.map(v => v.video_url));
                 return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
             };
@@ -1136,7 +1161,7 @@ Respond with JSON only: {
                         )}
                     </div>
 
-                    {getLocalVideosNotInDatabase().length > 0 && (
+                    {databaseLoaded && getLocalVideosNotInDatabase().length > 0 && (
                         <div className="local-videos-section">
                             <div className="section-title">
                                 💾 Local Videos (Not in Database)
@@ -1272,7 +1297,8 @@ Respond with JSON only: {
                             ) : (
                                 <div className="my-videos-list">
                                     {userVideos.map((video, index) => {
-                                        const isInDatabase = videos.some(v => v.video_url === video.video_url);
+                                        const isInDatabase = databaseLoaded && videos.some(v => v.video_url === video.video_url);
+                                        const showSyncButton = databaseLoaded && !isInDatabase;
                                         return (
                                             <div key={index} className="video-item">
                                                 {video.thumbnail_url && (
@@ -1287,7 +1313,7 @@ Respond with JSON only: {
                                                     <div className="video-item-meta">
                                                         {formatDuration(video.duration)} • {formatFileSize(video.file_size)}
                                                         {video.age_rating && ` • Rated ${video.age_rating}`}
-                                                        {!isInDatabase && (
+                                                        {showSyncButton && (
                                                             <span style={{color: '#ff6b35', marginLeft: '8px'}}>
                                                                 • Not in database
                                                             </span>
@@ -1308,7 +1334,7 @@ Respond with JSON only: {
                                                     >
                                                         ✏️ Edit
                                                     </button>
-                                                    {!isInDatabase && (
+                                                    {showSyncButton && (
                                                         <button 
                                                             className="btn-small resync-btn"
                                                             onClick={() => resyncVideo(video)}
