@@ -431,39 +431,53 @@
 
                     // Upload the video file with better error handling
                     let videoUrl;
+                    let uploadSuccess = false;
                     try {
                         videoUrl = await websim.upload(file);
-                        if (!videoUrl || typeof videoUrl !== 'string') {
+                        if (videoUrl && typeof videoUrl === 'string' && videoUrl.startsWith('http')) {
+                            uploadSuccess = true;
+                            console.log('Upload successful, URL:', videoUrl);
+                        } else {
                             throw new Error('Upload failed - invalid response');
                         }
                     } catch (uploadError) {
                         console.error('Upload API error:', uploadError);
-                        // Fallback: create a mock URL for local testing
+                        // Fallback: create a local URL for testing
                         videoUrl = URL.createObjectURL(file);
-                        console.log('Using fallback URL:', videoUrl);
+                        uploadSuccess = false;
+                        console.log('Using fallback local URL:', videoUrl);
                     }
                     
-                    console.log('Upload successful, URL:', videoUrl);
-                    
-                    setUploadProgress({ progress: 90, status: 'Saving to database...' });
+                    setUploadProgress({ progress: 90, status: 'Saving...' });
 
                     // Get video duration
                     const duration = await getVideoDuration(file);
 
-                    // Create video record
+                    // Create video record with only URLs and metadata
                     const videoData = {
                         title: uploadForm.title.trim(),
                         description: uploadForm.description.trim(),
                         video_url: videoUrl,
                         duration: duration,
                         file_size: file.size,
-                        thumbnail_url: frames.length > 0 ? frames[0] : null
+                        thumbnail_url: frames.length > 0 ? frames[0] : null,
+                        upload_status: uploadSuccess ? 'uploaded' : 'local'
                     };
 
                     console.log('Creating database record...');
-                    await room.collection('video').create(videoData);
                     
-                    // Save to local storage
+                    // Only attempt database save if upload was successful
+                    if (uploadSuccess) {
+                        try {
+                            await room.collection('video').create(videoData);
+                            console.log('Database record created successfully');
+                        } catch (dbError) {
+                            console.error('Database error:', dbError);
+                            // Continue anyway, we'll save locally
+                        }
+                    }
+                    
+                    // Always save to local storage
                     saveLocalVideo(videoData);
 
                     setUploadProgress({ progress: 100, status: 'Upload complete!' });
@@ -578,14 +592,21 @@
 
             const resyncVideo = async (localVideo) => {
                 try {
-                    await room.collection('video').create({
-                        title: localVideo.title,
-                        description: localVideo.description,
-                        video_url: localVideo.video_url,
-                        duration: localVideo.duration,
-                        file_size: localVideo.file_size,
-                        thumbnail_url: localVideo.thumbnail_url
-                    });
+                    // Only resync if video has a valid uploaded URL
+                    if (localVideo.upload_status === 'uploaded' && localVideo.video_url.startsWith('http')) {
+                        await room.collection('video').create({
+                            title: localVideo.title,
+                            description: localVideo.description,
+                            video_url: localVideo.video_url,
+                            duration: localVideo.duration,
+                            file_size: localVideo.file_size,
+                            thumbnail_url: localVideo.thumbnail_url,
+                            upload_status: 'uploaded'
+                        });
+                        console.log('Resync successful for:', localVideo.title);
+                    } else {
+                        console.log('Cannot resync local-only video:', localVideo.title);
+                    }
                 } catch (error) {
                     console.error('Resync failed:', error);
                 }
@@ -593,7 +614,11 @@
 
             const getLocalVideosNotInDatabase = () => {
                 const databaseUrls = new Set(videos.map(v => v.video_url));
-                return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
+                return localVideos.filter(lv => 
+                    !databaseUrls.has(lv.video_url) && 
+                    lv.upload_status === 'uploaded' && 
+                    lv.video_url.startsWith('http')
+                );
             };
 
             return (
