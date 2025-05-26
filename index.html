@@ -448,12 +448,12 @@
                     const frames = await extractVideoFrames(file);
                     console.log('Extracted frames:', frames.length);
                     
+                    let ageRating = 'E'; // Default rating
                     if (frames.length > 0) {
-                        await moderateContent(frames);
+                        ageRating = await moderateContent(frames);
                     }
 
                     setUploadProgress({ progress: 80, status: 'Uploading video...' });
-                    console.log('Uploading file...');
 
                     // Upload the video file with better error handling
                     let videoUrl;
@@ -485,7 +485,8 @@
                         video_url: videoUrl,
                         duration: duration,
                         file_size: file.size,
-                        thumbnail_url: frames.length > 0 ? frames[0] : null
+                        thumbnail_url: frames.length > 0 ? frames[0] : null,
+                        age_rating: ageRating
                     };
 
                     console.log('Creating database record...');
@@ -541,6 +542,9 @@
             const moderateContent = async (frames) => {
                 setUploadProgress({ progress: 30, status: 'Analyzing content for safety...' });
                 
+                let overallRating = 'E'; // Start with Everyone rating
+                const ratingHierarchy = ['E', 'E10+', 'T', 'M', '18+'];
+                
                 for (let i = 0; i < frames.length; i++) {
                     try {
                         const completion = await websim.chat.completions.create({
@@ -549,9 +553,20 @@
                                 content: [
                                     {
                                         type: "text",
-                                        text: `Analyze this video frame for inappropriate content. Rate it as either "safe" or "unsafe". 
-                                        Mark as "unsafe" if it contains: nudity, sexual content, graphic violence, or other 18+ material.
-                                        Respond with JSON only: {"rating": "safe" or "unsafe", "reason": "brief explanation"}`
+                                        text: `Analyze this video frame and provide a detailed description of what you see, then assign an age rating.
+
+Age Rating Scale:
+- E (Everyone): Suitable for all ages, no objectionable content
+- E10+ (Everyone 10+): Mild cartoon violence or minimal suggestive themes
+- T (Teen): Moderate violence, suggestive themes, mild language
+- M (Mature 17+): Intense violence, sexual themes, strong language
+- 18+ (Adults Only): Graphic violence, explicit sexual content, or other adult material
+
+Respond with JSON only: {
+  "description": "detailed description of what you see in the frame",
+  "age_rating": "E|E10+|T|M|18+",
+  "reasoning": "explanation for the age rating assigned"
+}`
                                     },
                                     {
                                         type: "image_url",
@@ -563,21 +578,31 @@
                         });
 
                         const result = JSON.parse(completion.content);
+                        console.log(`Frame ${i + 1} analysis:`, result);
                         
-                        if (result.rating === "unsafe") {
-                            throw new Error(`Content violation detected: ${result.reason}`);
+                        // Check if this frame got an 18+ rating
+                        if (result.age_rating === "18+") {
+                            throw new Error(`18+ content detected in frame ${i + 1}: ${result.reasoning}`);
+                        }
+                        
+                        // Update overall rating if this frame has a higher rating
+                        const currentIndex = ratingHierarchy.indexOf(result.age_rating);
+                        const overallIndex = ratingHierarchy.indexOf(overallRating);
+                        if (currentIndex > overallIndex) {
+                            overallRating = result.age_rating;
                         }
                         
                         setUploadProgress({ 
                             progress: 30 + (i + 1) / frames.length * 40, 
-                            status: `Checking frame ${i + 1}/${frames.length}...` 
+                            status: `Analyzing frame ${i + 1}/${frames.length} (${result.age_rating})...` 
                         });
                     } catch (error) {
                         throw new Error(error.message || 'Content moderation failed');
                     }
                 }
                 
-                return true;
+                console.log(`Video overall age rating: ${overallRating}`);
+                return overallRating;
             };
 
             const handleDrop = (e) => {
@@ -612,7 +637,8 @@
                         video_url: localVideo.video_url,
                         duration: localVideo.duration,
                         file_size: localVideo.file_size,
-                        thumbnail_url: localVideo.thumbnail_url
+                        thumbnail_url: localVideo.thumbnail_url,
+                        age_rating: localVideo.age_rating
                     });
                 } catch (error) {
                     console.error('Resync failed:', error);
@@ -726,6 +752,14 @@
                                                 <span>{formatDuration(video.duration)}</span>
                                                 <span>•</span>
                                                 <span>{formatFileSize(video.file_size)}</span>
+                                                {video.age_rating && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span style={{background: '#333', padding: '2px 6px', borderRadius: '4px', fontSize: '11px'}}>
+                                                            {video.age_rating}
+                                                        </span>
+                                                    </>
+                                                )}
                                                 <button 
                                                     className="resync-btn"
                                                     onClick={(e) => {
@@ -770,6 +804,14 @@
                                             <span>{formatDuration(video.duration)}</span>
                                             <span>•</span>
                                             <span>{formatFileSize(video.file_size)}</span>
+                                            {video.age_rating && (
+                                                <>
+                                                    <span>•</span>
+                                                    <span style={{background: '#333', padding: '2px 6px', borderRadius: '4px', fontSize: '11px'}}>
+                                                        {video.age_rating}
+                                                    </span>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -795,6 +837,7 @@
                                 )}
                                 <div style={{color: '#aaa', fontSize: '12px', marginTop: '8px'}}>
                                     Uploaded by {selectedVideo.username} • {formatDuration(selectedVideo.duration)} • {formatFileSize(selectedVideo.file_size)}
+                                    {selectedVideo.age_rating && ` • Rated ${selectedVideo.age_rating}`}
                                 </div>
                             </div>
                         </div>
