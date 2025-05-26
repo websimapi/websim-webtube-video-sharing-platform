@@ -455,10 +455,10 @@
 
                     setUploadProgress({ progress: 80, status: 'Uploading video...' });
 
-                    // Upload the video file with better error handling
+                    // Upload the video file with retry logic
                     let videoUrl;
                     try {
-                        videoUrl = await websim.upload(file);
+                        videoUrl = await uploadWithRetry(file, 3); // 3 retry attempts
                         if (!videoUrl || typeof videoUrl !== 'string') {
                             throw new Error('Upload failed - invalid response');
                         }
@@ -468,7 +468,7 @@
                         }
                     } catch (uploadError) {
                         console.error('Upload API error:', uploadError);
-                        throw new Error('Upload failed - please try again later');
+                        throw new Error('Upload failed after multiple attempts - please try again later');
                     }
 
                     console.log('Upload successful, URL:', videoUrl);
@@ -514,6 +514,50 @@
                     setUploading(false);
                     setUploadProgress({ progress: 0, status: '' });
                 }
+            };
+
+            const uploadWithRetry = async (file, maxRetries = 3, baseDelay = 1000) => {
+                let lastError;
+                
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    try {
+                        setUploadProgress({ 
+                            progress: 80 + (attempt * 5), 
+                            status: attempt > 0 ? `Retrying upload (${attempt + 1}/${maxRetries})...` : 'Uploading video...' 
+                        });
+                        
+                        const result = await websim.upload(file);
+                        
+                        // Validate the result
+                        if (!result) {
+                            throw new Error('Upload returned null or undefined');
+                        }
+                        
+                        if (typeof result !== 'string') {
+                            throw new Error('Upload returned non-string result');
+                        }
+                        
+                        return result;
+                        
+                    } catch (error) {
+                        lastError = error;
+                        console.log(`Upload attempt ${attempt + 1} failed:`, error.message);
+                        
+                        // Don't retry on the last attempt
+                        if (attempt === maxRetries - 1) {
+                            break;
+                        }
+                        
+                        // Calculate delay with exponential backoff
+                        const delay = baseDelay * Math.pow(2, attempt);
+                        console.log(`Waiting ${delay}ms before retry...`);
+                        
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+                
+                // All retries failed, throw the last error
+                throw lastError;
             };
 
             const getVideoDuration = (file) => {
