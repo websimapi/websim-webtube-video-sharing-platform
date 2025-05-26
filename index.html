@@ -530,12 +530,13 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef } = React;
 
         // Initialize WebsimSocket
         const room = new WebsimSocket();
 
         function WebTubeApp() {
+            const [videos, setVideos] = useState([]);
             const [localVideos, setLocalVideos] = useState([]);
             const [selectedVideo, setSelectedVideo] = useState(null);
             const [uploading, setUploading] = useState(false);
@@ -545,41 +546,28 @@
             const [activeTab, setActiveTab] = useState('browse');
             const [editingVideo, setEditingVideo] = useState(null);
             const [editForm, setEditForm] = useState({ title: '', description: '' });
+            const [databaseLoaded, setDatabaseLoaded] = useState(false);
             const fileInputRef = useRef();
-            const [dbCheckComplete, setDbCheckComplete] = useState(false);
 
             // Subscribe to video records
-            const videoRecordsRaw = React.useSyncExternalStore(
+            const videoRecords = React.useSyncExternalStore(
                 room.collection('video').subscribe,
                 room.collection('video').getList
             );
 
-            const videos = useMemo(() => {
-                // Ensure videoRecordsRaw is an array before calling reverse
-                return Array.isArray(videoRecordsRaw) ? [...videoRecordsRaw].reverse() : [];
-            }, [videoRecordsRaw]);
-
             useEffect(() => {
-                loadLocalVideos();
-            }, []); // Load local videos once on mount
-
-            useEffect(() => {
-                // This effect determines if the initial database check can be considered complete.
-                if (videos.length > 0) {
-                    // If we have videos from the database, the check is complete.
-                    setDbCheckComplete(true);
-                    return; // No timer needed.
+                setVideos(videoRecords.reverse()); // Show newest first
+                
+                // Mark database as loaded after we get the initial records
+                // Use a small delay to ensure we have the actual data, not just empty array
+                if (!databaseLoaded && videoRecords.length >= 0) {
+                    setTimeout(() => {
+                        setDatabaseLoaded(true);
+                    }, 1000); // Give 1 second for database to fully load
                 }
-
-                // If videos list is empty, it could be loading, or the database might truly be empty.
-                // We'll set a timeout to consider the check complete after a short period.
-                const timerId = setTimeout(() => {
-                    setDbCheckComplete(true);
-                }, 1500); // Consider check complete after 1.5 seconds if still no videos.
-
-                // Cleanup: clear the timeout if videos populate before 1.5s, or if component unmounts.
-                return () => clearTimeout(timerId);
-            }, [videos]); // Re-run when 'videos' (derived from database) changes.
+                
+                loadLocalVideos();
+            }, [videoRecords, databaseLoaded]);
 
             const loadLocalVideos = () => {
                 const stored = localStorage.getItem('webtube_videos');
@@ -700,7 +688,7 @@
                         const record = await Promise.race([
                             room.collection('video').create(videoData),
                             new Promise((_, reject) => 
-                                setTimeout(() => reject(new Error('Database operation timed out')), 10000) // 10s timeout
+                                setTimeout(() => reject(new Error('Database operation timed out')), 10000)
                             )
                         ]);
                         
@@ -714,14 +702,12 @@
                             break;
                         }
                         
-                        const delay = 1000 * Math.pow(2, attempt); // Exponential backoff
-                        console.log(`Waiting ${delay}ms before retrying database save...`);
+                        const delay = 1000 * Math.pow(2, attempt);
                         await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
                 
-                console.error('Failed to save to database after multiple retries:', lastError);
-                throw new Error(`Failed to save to database after ${maxRetries} attempts. Last error: ${lastError.message}`);
+                throw lastError;
             };
 
             const handleFileUpload = async (file) => {
@@ -995,7 +981,7 @@ Respond with JSON only: {
             const getUserVideos = () => {
                 // Get current user's username (you can implement proper auth later)
                 const currentUser = 'guest'; // For now, assume guest user
-                return localVideos; // Return all local videos as user's videos for dashboard purposes
+                return localVideos; // Return all local videos as user's videos
             };
 
             const getTotalDuration = () => {
@@ -1090,10 +1076,8 @@ Respond with JSON only: {
                     
                     let ageRating = 'E'; // Default rating
                     if (frames.length > 0) {
-                        ageRating = await moderateContent(frames); // This already updates progress
+                        ageRating = await moderateContent(frames);
                         console.log('New age rating for resync:', ageRating);
-                    } else {
-                         setUploadProgress({ progress: 80, status: 'No frames to analyze, proceeding with upload...' });
                     }
                     
                     await createDatabaseRecord({
@@ -1102,14 +1086,11 @@ Respond with JSON only: {
                         video_url: localVideo.video_url,
                         duration: localVideo.duration,
                         file_size: localVideo.file_size,
-                        thumbnail_url: localVideo.thumbnail_url || (frames.length > 0 ? frames[0] : null),
+                        thumbnail_url: localVideo.thumbnail_url,
                         age_rating: ageRating // Use the newly calculated age rating
                     });
                     
                     console.log('Video resynced successfully with new age rating:', ageRating);
-                    // Optionally, provide user feedback for successful resync
-                    alert(`Video "${localVideo.title}" resynced successfully!`);
-
                 } catch (error) {
                     console.error('Resync failed:', error);
                     alert('Resync failed: ' + error.message);
@@ -1117,16 +1098,16 @@ Respond with JSON only: {
             };
 
             const getLocalVideosNotInDatabase = () => {
-                if (!dbCheckComplete) {
-                    return []; // Don't show any videos for resync until DB check is done
+                // Don't return any videos as "not in database" until we're sure database has loaded
+                if (!databaseLoaded) {
+                    return [];
                 }
+                
                 const databaseUrls = new Set(videos.map(v => v.video_url));
                 return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
             };
 
-            const renderBrowseTab = () => {
-                const videosToResync = getLocalVideosNotInDatabase();
-                return (
+            const renderBrowseTab = () => (
                 <div className="tab-content">
                     <div className="warning-banner">
                         ⚠️ Videos are temporarily stored in our database due to entry limits. 
@@ -1192,19 +1173,19 @@ Respond with JSON only: {
                         )}
                     </div>
 
-                    {videosToResync.length > 0 && (
+                    {getLocalVideosNotInDatabase().length > 0 && (
                         <div className="local-videos-section">
                             <div className="section-title">
                                 💾 Local Videos (Not in Database)
                                 <button 
                                     className="resync-btn"
-                                    onClick={() => videosToResync.forEach(resyncVideo)}
+                                    onClick={() => getLocalVideosNotInDatabase().forEach(resyncVideo)}
                                 >
-                                    Resync All ({videosToResync.length})
+                                    Resync All
                                 </button>
                             </div>
                             <div className="videos-grid">
-                                {videosToResync.map((video, index) => (
+                                {getLocalVideosNotInDatabase().map((video, index) => (
                                     <div key={index} className="video-card" onClick={() => setSelectedVideo(video)}>
                                         {video.thumbnail_url && (
                                             <img 
@@ -1233,7 +1214,6 @@ Respond with JSON only: {
                                                         e.stopPropagation();
                                                         resyncVideo(video);
                                                     }}
-                                                    disabled={uploading} // Disable if another upload is in progress
                                                 >
                                                     Resync
                                                 </button>
@@ -1287,15 +1267,12 @@ Respond with JSON only: {
                         </div>
                     </div>
                 </div>
-                );
-            };
+            );
 
             const renderCreatorDashboard = () => {
                 const userVideos = getUserVideos();
                 const totalDuration = getTotalDuration();
                 const totalSize = getTotalFileSize();
-                const pendingSyncCount = dbCheckComplete ? getLocalVideosNotInDatabase().length : 0;
-
 
                 return (
                     <div className="tab-content">
@@ -1316,7 +1293,7 @@ Respond with JSON only: {
                                     <div className="stat-label">Total Size</div>
                                 </div>
                                 <div className="stat-card">
-                                    <div className="stat-number">{pendingSyncCount}</div>
+                                    <div className="stat-number">{databaseLoaded ? getLocalVideosNotInDatabase().length : '...'}</div>
                                     <div className="stat-label">Pending Sync</div>
                                 </div>
                             </div>
@@ -1332,7 +1309,7 @@ Respond with JSON only: {
                             ) : (
                                 <div className="my-videos-list">
                                     {userVideos.map((video, index) => {
-                                        const isActuallyInDatabase = videos.some(v => v.video_url === video.video_url);
+                                        const isInDatabase = databaseLoaded ? videos.some(v => v.video_url === video.video_url) : true;
                                         return (
                                             <div key={index} className="video-item">
                                                 {video.thumbnail_url && (
@@ -1347,7 +1324,7 @@ Respond with JSON only: {
                                                     <div className="video-item-meta">
                                                         {formatDuration(video.duration)} • {formatFileSize(video.file_size)}
                                                         {video.age_rating && ` • Rated ${video.age_rating}`}
-                                                        {!isActuallyInDatabase && (
+                                                        {databaseLoaded && !isInDatabase && (
                                                             <span style={{color: '#ff6b35', marginLeft: '8px'}}>
                                                                 • Not in database
                                                             </span>
@@ -1368,11 +1345,10 @@ Respond with JSON only: {
                                                     >
                                                         ✏️ Edit
                                                     </button>
-                                                    {dbCheckComplete && !isActuallyInDatabase && (
+                                                    {databaseLoaded && !isInDatabase && (
                                                         <button 
                                                             className="btn-small resync-btn"
                                                             onClick={() => resyncVideo(video)}
-                                                            disabled={uploading} // Disable if another upload is in progress
                                                         >
                                                             🔄 Sync
                                                         </button>
