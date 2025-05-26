@@ -278,6 +278,252 @@
             background: #666;
             cursor: not-allowed;
         }
+
+        .tabs {
+            display: flex;
+            background: #212121;
+            border-bottom: 1px solid #303030;
+            margin: 0 16px;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+        }
+
+        .tab {
+            padding: 16px 24px;
+            cursor: pointer;
+            background: #181818;
+            border: none;
+            color: #aaa;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            flex: 1;
+            text-align: center;
+        }
+
+        .tab:hover {
+            background: #252525;
+            color: #fff;
+        }
+
+        .tab.active {
+            background: #ff0000;
+            color: #fff;
+        }
+
+        .tab-content {
+            min-height: 400px;
+        }
+
+        .creator-dashboard {
+            padding: 24px;
+            background: #181818;
+            margin: 0 16px 16px;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .dashboard-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #212121;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #303030;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff0000;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .my-videos-list {
+            background: #212121;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .video-item {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid #303030;
+            transition: background 0.3s ease;
+        }
+
+        .video-item:hover {
+            background: #252525;
+        }
+
+        .video-item:last-child {
+            border-bottom: none;
+        }
+
+        .video-item-thumbnail {
+            width: 120px;
+            height: 68px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-right: 16px;
+            background: #000;
+        }
+
+        .video-item-info {
+            flex: 1;
+        }
+
+        .video-item-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+
+        .video-item-meta {
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .video-item-description {
+            color: #ccc;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .video-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-edit {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #45a049;
+        }
+
+        .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #da190b;
+        }
+
+        .edit-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+        }
+
+        .edit-modal-content {
+            background: #212121;
+            border-radius: 8px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow: auto;
+        }
+
+        .edit-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .edit-form textarea {
+            width: 100%;
+            padding: 12px;
+            background: #303030;
+            border: 1px solid #606060;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+
+        .btn-save {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save:hover {
+            background: #45a049;
+        }
+
+        .btn-cancel {
+            background: #666;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-cancel:hover {
+            background: #555;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #aaa;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -297,6 +543,9 @@
             const [uploadProgress, setUploadProgress] = useState({ progress: 0, status: '' });
             const [error, setError] = useState('');
             const [uploadForm, setUploadForm] = useState({ title: '', description: '' });
+            const [activeTab, setActiveTab] = useState('browse');
+            const [editingVideo, setEditingVideo] = useState(null);
+            const [editForm, setEditForm] = useState({ title: '', description: '' });
             const fileInputRef = useRef();
 
             // Subscribe to video records
@@ -719,6 +968,85 @@ Respond with JSON only: {
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
             };
 
+            const getUserVideos = () => {
+                // Get current user's username (you can implement proper auth later)
+                const currentUser = 'guest'; // For now, assume guest user
+                return localVideos; // Return all local videos as user's videos
+            };
+
+            const getTotalDuration = () => {
+                return getUserVideos().reduce((total, video) => total + (video.duration || 0), 0);
+            };
+
+            const getTotalFileSize = () => {
+                return getUserVideos().reduce((total, video) => total + (video.file_size || 0), 0);
+            };
+
+            const openEditModal = (video) => {
+                setEditingVideo(video);
+                setEditForm({
+                    title: video.title,
+                    description: video.description || ''
+                });
+            };
+
+            const closeEditModal = () => {
+                setEditingVideo(null);
+                setEditForm({ title: '', description: '' });
+            };
+
+            const saveVideoEdit = () => {
+                if (!editForm.title.trim()) {
+                    alert('Title is required');
+                    return;
+                }
+
+                // Update local storage
+                const stored = localStorage.getItem('webtube_videos') || '[]';
+                const localVids = JSON.parse(stored);
+                const updatedVids = localVids.map(video => 
+                    video.video_url === editingVideo.video_url 
+                        ? { ...video, title: editForm.title.trim(), description: editForm.description.trim() }
+                        : video
+                );
+                localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
+                setLocalVideos(updatedVids);
+
+                // If video is in database, update it there too
+                const databaseVideo = videos.find(v => v.video_url === editingVideo.video_url);
+                if (databaseVideo) {
+                    room.collection('video').update(databaseVideo.id, {
+                        title: editForm.title.trim(),
+                        description: editForm.description.trim()
+                    }).catch(error => {
+                        console.warn('Failed to update database record:', error);
+                    });
+                }
+
+                closeEditModal();
+            };
+
+            const deleteVideo = (video) => {
+                if (!confirm('Are you sure you want to delete this video?')) {
+                    return;
+                }
+
+                // Remove from local storage
+                const stored = localStorage.getItem('webtube_videos') || '[]';
+                const localVids = JSON.parse(stored);
+                const updatedVids = localVids.filter(v => v.video_url !== video.video_url);
+                localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
+                setLocalVideos(updatedVids);
+
+                // If video is in database, try to remove it (might fail due to permissions)
+                const databaseVideo = videos.find(v => v.video_url === video.video_url);
+                if (databaseVideo) {
+                    room.collection('video').delete(databaseVideo.id).catch(error => {
+                        console.warn('Failed to delete from database (this is normal):', error);
+                    });
+                }
+            };
+
             const resyncVideo = async (localVideo) => {
                 try {
                     console.log('Resyncing video:', localVideo.title);
@@ -755,17 +1083,8 @@ Respond with JSON only: {
                 return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
             };
 
-            return (
-                <div className="app">
-                    <header className="header">
-                        <div className="logo">
-                            📺 WebTube
-                        </div>
-                        <div style={{fontSize: '14px', color: '#aaa'}}>
-                            Powered by WebSim
-                        </div>
-                    </header>
-
+            const renderBrowseTab = () => (
+                <div className="tab-content">
                     <div className="warning-banner">
                         ⚠️ Videos are temporarily stored in our database due to entry limits. 
                         Your videos are also saved locally and can be re-synced if removed from the database.
@@ -923,6 +1242,138 @@ Respond with JSON only: {
                             ))}
                         </div>
                     </div>
+                </div>
+            );
+
+            const renderCreatorDashboard = () => {
+                const userVideos = getUserVideos();
+                const totalDuration = getTotalDuration();
+                const totalSize = getTotalFileSize();
+
+                return (
+                    <div className="tab-content">
+                        <div className="creator-dashboard">
+                            <h2 style={{marginBottom: '24px', color: '#fff'}}>📊 Creator Dashboard</h2>
+                            
+                            <div className="dashboard-stats">
+                                <div className="stat-card">
+                                    <div className="stat-number">{userVideos.length}</div>
+                                    <div className="stat-label">Total Videos</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{formatDuration(totalDuration)}</div>
+                                    <div className="stat-label">Total Duration</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{formatFileSize(totalSize)}</div>
+                                    <div className="stat-label">Total Size</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{getLocalVideosNotInDatabase().length}</div>
+                                    <div className="stat-label">Pending Sync</div>
+                                </div>
+                            </div>
+
+                            <h3 style={{marginBottom: '16px', color: '#fff'}}>📁 My Videos</h3>
+                            
+                            {userVideos.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">📹</div>
+                                    <h3>No videos uploaded yet</h3>
+                                    <p>Switch to the Browse tab to upload your first video!</p>
+                                </div>
+                            ) : (
+                                <div className="my-videos-list">
+                                    {userVideos.map((video, index) => {
+                                        const isInDatabase = videos.some(v => v.video_url === video.video_url);
+                                        return (
+                                            <div key={index} className="video-item">
+                                                {video.thumbnail_url && (
+                                                    <img 
+                                                        src={video.thumbnail_url} 
+                                                        alt={video.title}
+                                                        className="video-item-thumbnail"
+                                                    />
+                                                )}
+                                                <div className="video-item-info">
+                                                    <div className="video-item-title">{video.title}</div>
+                                                    <div className="video-item-meta">
+                                                        {formatDuration(video.duration)} • {formatFileSize(video.file_size)}
+                                                        {video.age_rating && ` • Rated ${video.age_rating}`}
+                                                        {!isInDatabase && (
+                                                            <span style={{color: '#ff6b35', marginLeft: '8px'}}>
+                                                                • Not in database
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {video.description && (
+                                                        <div className="video-item-description">
+                                                            {video.description.length > 100 
+                                                                ? video.description.substring(0, 100) + '...' 
+                                                                : video.description}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="video-item-actions">
+                                                    <button 
+                                                        className="btn-small btn-edit"
+                                                        onClick={() => openEditModal(video)}
+                                                    >
+                                                        ✏️ Edit
+                                                    </button>
+                                                    {!isInDatabase && (
+                                                        <button 
+                                                            className="btn-small resync-btn"
+                                                            onClick={() => resyncVideo(video)}
+                                                        >
+                                                            🔄 Sync
+                                                        </button>
+                                                    )}
+                                                    <button 
+                                                        className="btn-small btn-delete"
+                                                        onClick={() => deleteVideo(video)}
+                                                    >
+                                                        🗑️ Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="app">
+                    <header className="header">
+                        <div className="logo">
+                            📺 WebTube
+                        </div>
+                        <div style={{fontSize: '14px', color: '#aaa'}}>
+                            Powered by WebSim
+                        </div>
+                    </header>
+
+                    <div className="tabs">
+                        <button 
+                            className={`tab ${activeTab === 'browse' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('browse')}
+                        >
+                            🏠 Browse
+                        </button>
+                        <button 
+                            className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('dashboard')}
+                        >
+                            📊 Creator Dashboard
+                        </button>
+                    </div>
+
+                    {activeTab === 'browse' && renderBrowseTab()}
+                    {activeTab === 'dashboard' && renderCreatorDashboard()}
 
                     {selectedVideo && (
                         <div className="modal" onClick={() => setSelectedVideo(null)}>
@@ -943,6 +1394,47 @@ Respond with JSON only: {
                                 <div style={{color: '#aaa', fontSize: '12px', marginTop: '8px'}}>
                                     Uploaded by {selectedVideo.username} • {formatDuration(selectedVideo.duration)} • {formatFileSize(selectedVideo.file_size)}
                                     {selectedVideo.age_rating && ` • Rated ${selectedVideo.age_rating}`}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {editingVideo && (
+                        <div className="edit-modal" onClick={closeEditModal}>
+                            <div className="edit-modal-content" onClick={(e) => e.stopPropagation()}>
+                                <div className="close-btn" onClick={closeEditModal}>×</div>
+                                <h3 style={{marginBottom: '16px', color: '#fff'}}>Edit Video</h3>
+                                
+                                <div className="edit-form">
+                                    <div className="input-group">
+                                        <label htmlFor="edit-title">Title *</label>
+                                        <input
+                                            type="text"
+                                            id="edit-title"
+                                            value={editForm.title}
+                                            onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                                            placeholder="Enter video title..."
+                                        />
+                                    </div>
+
+                                    <div className="input-group">
+                                        <label htmlFor="edit-description">Description</label>
+                                        <textarea
+                                            id="edit-description"
+                                            value={editForm.description}
+                                            onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                                            placeholder="Enter video description..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="edit-actions">
+                                    <button className="btn-cancel" onClick={closeEditModal}>
+                                        Cancel
+                                    </button>
+                                    <button className="btn-save" onClick={saveVideoEdit}>
+                                        Save Changes
+                                    </button>
                                 </div>
                             </div>
                         </div>
