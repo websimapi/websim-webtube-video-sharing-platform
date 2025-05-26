@@ -995,7 +995,7 @@ Respond with JSON only: {
                 setEditForm({ title: '', description: '' });
             };
 
-            const saveVideoEdit = () => {
+            const saveVideoEdit = async () => {
                 if (!editForm.title.trim()) {
                     alert('Title is required');
                     return;
@@ -1012,21 +1012,30 @@ Respond with JSON only: {
                 localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
                 setLocalVideos(updatedVids);
 
-                // If video is in database, update it there too
+                // If video is in database, update it there too (only if it belongs to current user)
                 const databaseVideo = videos.find(v => v.video_url === editingVideo.video_url);
                 if (databaseVideo) {
-                    room.collection('video').update(databaseVideo.id, {
-                        title: editForm.title.trim(),
-                        description: editForm.description.trim()
-                    }).catch(error => {
-                        console.warn('Failed to update database record:', error);
-                    });
+                    try {
+                        const currentUser = await window.websim.getCurrentUser();
+                        if (databaseVideo.username === currentUser.username) {
+                            await room.collection('video').update(databaseVideo.id, {
+                                title: editForm.title.trim(),
+                                description: editForm.description.trim()
+                            });
+                            console.log('Database record updated successfully');
+                        } else {
+                            console.log('Cannot update database record - not owned by current user');
+                        }
+                    } catch (error) {
+                        console.warn('Failed to update database record:', error.message);
+                        // Don't show error to user since local storage was updated successfully
+                    }
                 }
 
                 closeEditModal();
             };
 
-            const deleteVideo = (video) => {
+            const deleteVideo = async (video) => {
                 if (!confirm('Are you sure you want to delete this video?')) {
                     return;
                 }
@@ -1038,12 +1047,21 @@ Respond with JSON only: {
                 localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
                 setLocalVideos(updatedVids);
 
-                // If video is in database, try to remove it (might fail due to permissions)
+                // If video is in database, try to remove it (only if it belongs to current user)
                 const databaseVideo = videos.find(v => v.video_url === video.video_url);
                 if (databaseVideo) {
-                    room.collection('video').delete(databaseVideo.id).catch(error => {
-                        console.warn('Failed to delete from database (this is normal):', error);
-                    });
+                    try {
+                        const currentUser = await window.websim.getCurrentUser();
+                        if (databaseVideo.username === currentUser.username) {
+                            await room.collection('video').delete(databaseVideo.id);
+                            console.log('Database record deleted successfully');
+                        } else {
+                            console.log('Cannot delete database record - not owned by current user');
+                        }
+                    } catch (error) {
+                        console.warn('Failed to delete from database:', error.message);
+                        // Don't show error to user since local storage was updated successfully
+                    }
                 }
             };
 
