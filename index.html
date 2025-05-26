@@ -1016,8 +1016,15 @@ Respond with JSON only: {
                 const databaseVideo = videos.find(v => v.video_url === editingVideo.video_url);
                 if (databaseVideo) {
                     try {
-                        const currentUser = await window.websim.getCurrentUser();
-                        if (databaseVideo.username === currentUser.username) {
+                        let currentUser;
+                        try {
+                            currentUser = await window.websim.getCurrentUser();
+                        } catch (userError) {
+                            console.log('getCurrentUser not available, skipping user check');
+                            currentUser = null;
+                        }
+                        
+                        if (!currentUser || databaseVideo.username === currentUser.username) {
                             await room.collection('video').update(databaseVideo.id, {
                                 title: editForm.title.trim(),
                                 description: editForm.description.trim()
@@ -1051,8 +1058,15 @@ Respond with JSON only: {
                 const databaseVideo = videos.find(v => v.video_url === video.video_url);
                 if (databaseVideo) {
                     try {
-                        const currentUser = await window.websim.getCurrentUser();
-                        if (databaseVideo.username === currentUser.username) {
+                        let currentUser;
+                        try {
+                            currentUser = await window.websim.getCurrentUser();
+                        } catch (userError) {
+                            console.log('getCurrentUser not available, skipping user check');
+                            currentUser = null;
+                        }
+                        
+                        if (!currentUser || databaseVideo.username === currentUser.username) {
                             await room.collection('video').delete(databaseVideo.id);
                             console.log('Database record deleted successfully');
                         } else {
