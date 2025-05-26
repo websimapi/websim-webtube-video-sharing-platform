@@ -575,6 +575,16 @@
                             throw new Error('Upload returned non-string result');
                         }
                         
+                        // Check if result is HTML error page instead of URL
+                        if (result.trim().startsWith('<') || result.includes('<!DOCTYPE')) {
+                            throw new Error('Upload service returned HTML error page instead of URL');
+                        }
+                        
+                        // Validate URL format
+                        if (!result.startsWith('http://') && !result.startsWith('https://')) {
+                            throw new Error(`Invalid URL format received: ${result.substring(0, 50)}`);
+                        }
+                        
                         return result;
                         
                     } catch (error) {
@@ -586,8 +596,8 @@
                             break;
                         }
                         
-                        // Calculate delay with exponential backoff
-                        const delay = baseDelay * Math.pow(2, attempt);
+                        // Calculate delay with exponential backoff, longer delay for HTML errors
+                        const delay = baseDelay * Math.pow(2, attempt) * (error.message.includes('HTML') ? 2 : 1);
                         console.log(`Waiting ${delay}ms before retry...`);
                         
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -595,7 +605,7 @@
                 }
                 
                 // All retries failed, throw the last error
-                throw lastError;
+                throw new Error(`Upload failed after ${maxRetries} attempts. Last error: ${lastError.message}`);
             };
 
             const getVideoDuration = (file) => {
