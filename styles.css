@@ -1,0 +1,517 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', Arial, sans-serif;
+    background: #0f0f0f;
+    color: #fff;
+}
+
+.header {
+    background: #212121;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #303030;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 20px;
+    font-weight: bold;
+    color: #ff0000;
+}
+
+.upload-section {
+    padding: 24px;
+    background: #181818;
+    margin: 16px;
+    border-radius: 8px;
+    border: 2px dashed #303030;
+}
+
+.upload-area {
+    text-align: center;
+    padding: 40px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+    background: #252525;
+    border-color: #606060;
+}
+
+.upload-area.dragover {
+    background: #252525;
+    border-color: #ff0000;
+}
+
+.upload-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.7;
+}
+
+.warning-banner {
+    background: linear-gradient(45deg, #ff6b35, #f7931e);
+    padding: 12px 24px;
+    margin: 16px;
+    border-radius: 8px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.videos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+    padding: 24px;
+}
+
+.video-card {
+    background: #212121;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.video-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.video-thumbnail {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    background: #000;
+}
+
+.video-info {
+    padding: 12px;
+}
+
+.video-title {
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.video-meta {
+    color: #aaa;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+}
+
+.upload-progress {
+    background: #303030;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 12px;
+}
+
+.progress-bar {
+    height: 4px;
+    background: #ff0000;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #aaa;
+}
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #212121;
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: auto;
+}
+
+.video-player {
+    width: 100%;
+    max-width: 800px;
+    border-radius: 8px;
+}
+
+.close-btn {
+    float: right;
+    font-size: 24px;
+    cursor: pointer;
+    color: #aaa;
+    margin-bottom: 16px;
+}
+
+.close-btn:hover {
+    color: #fff;
+}
+
+.local-videos-section {
+    margin: 16px;
+    padding: 24px;
+    background: #181818;
+    border-radius: 8px;
+}
+
+.section-title {
+    font-size: 18px;
+    margin-bottom: 16px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.resync-btn {
+    background: #ff0000;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 8px;
+}
+
+.resync-btn:hover {
+    background: #cc0000;
+}
+
+.error-message {
+    background: #ff4444;
+    color: white;
+    padding: 12px;
+    border-radius: 4px;
+    margin-top: 12px;
+}
+
+input[type="file"] {
+    display: none;
+}
+
+.input-group {
+    margin-bottom: 16px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 14px;
+    color: #aaa;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 8px 12px;
+    background: #303030;
+    border: 1px solid #606060;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+}
+
+.upload-btn {
+    background: #ff0000;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+    margin-top: 16px;
+}
+
+.upload-btn:hover {
+    background: #cc0000;
+}
+
+.upload-btn:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+.tabs {
+    display: flex;
+    background: #212121;
+    border-bottom: 1px solid #303030;
+    margin: 0 16px;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+}
+
+.tab {
+    padding: 16px 24px;
+    cursor: pointer;
+    background: #181818;
+    border: none;
+    color: #aaa;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    flex: 1;
+    text-align: center;
+}
+
+.tab:hover {
+    background: #252525;
+    color: #fff;
+}
+
+.tab.active {
+    background: #ff0000;
+    color: #fff;
+}
+
+.tab-content {
+    min-height: 400px;
+}
+
+.creator-dashboard {
+    padding: 24px;
+    background: #181818;
+    margin: 0 16px 16px;
+    border-radius: 0 0 8px 8px;
+}
+
+.dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: #212121;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #303030;
+}
+
+.stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ff0000;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    color: #aaa;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.my-videos-list {
+    background: #212121;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.video-item {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #303030;
+    transition: background 0.3s ease;
+}
+
+.video-item:hover {
+    background: #252525;
+}
+
+.video-item:last-child {
+    border-bottom: none;
+}
+
+.video-item-thumbnail {
+    width: 120px;
+    height: 68px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-right: 16px;
+    background: #000;
+}
+
+.video-item-info {
+    flex: 1;
+}
+
+.video-item-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #fff;
+}
+
+.video-item-meta {
+    color: #aaa;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.video-item-description {
+    color: #ccc;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.video-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-edit {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-edit:hover {
+    background: #45a049;
+}
+
+.btn-delete {
+    background: #f44336;
+    color: white;
+}
+
+.btn-delete:hover {
+    background: #da190b;
+}
+
+.edit-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1001;
+}
+
+.edit-modal-content {
+    background: #212121;
+    border-radius: 8px;
+    padding: 24px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow: auto;
+}
+
+.edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.edit-form textarea {
+    width: 100%;
+    padding: 12px;
+    background: #303030;
+    border: 1px solid #606060;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+.btn-save {
+    background: #4CAF50;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-save:hover {
+    background: #45a049;
+}
+
+.btn-cancel {
+    background: #666;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-cancel:hover {
+    background: #555;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #aaa;
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
