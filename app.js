@@ -1,21 +1,13 @@
-const { useState, useEffect, useRef } = React;
+import { formatDuration, formatFileSize, getVideoDuration, extractVideoFramesFromUrl } from './utils.js';
+import { moderateContent } from './videoModeration.js';
+import { uploadWithRetry, createDatabaseRecord } from './videoUpload.js';
 
-import { 
-    formatDuration, 
-    formatFileSize, 
-    extractVideoFramesFromUrl, 
-    getVideoDuration, 
-    uploadWithRetry, 
-    moderateContent, 
-    createDatabaseRecord, 
-    saveLocalVideo, 
-    loadLocalVideos 
-} from './utils.js';
+const { useState, useEffect, useRef } = React;
 
 // Initialize WebsimSocket
 const room = new WebsimSocket();
 
-function WebTubeApp() {
+export function WebTubeApp() {
     const [videos, setVideos] = useState([]);
     const [localVideos, setLocalVideos] = useState([]);
     const [selectedVideo, setSelectedVideo] = useState(null);
@@ -35,9 +27,50 @@ function WebTubeApp() {
     );
 
     useEffect(() => {
-        setVideos(videoRecords.reverse());
-        loadLocalVideos(setLocalVideos);
+        setVideos(videoRecords.reverse()); // Show newest first
+        loadLocalVideos();
     }, [videoRecords]);
+
+    const loadLocalVideos = () => {
+        const stored = localStorage.getItem('webtube_videos');
+        if (stored) {
+            try {
+                const allVideos = JSON.parse(stored);
+                // Filter out videos with blob URLs (broken/temporary URLs)
+                const validVideos = allVideos.filter(video => 
+                    video.video_url && 
+                    (video.video_url.startsWith('http://') || video.video_url.startsWith('https://'))
+                );
+                
+                // Update localStorage with only valid videos
+                if (validVideos.length !== allVideos.length) {
+                    localStorage.setItem('webtube_videos', JSON.stringify(validVideos));
+                    console.log(`Cleaned up ${allVideos.length - validVideos.length} broken video URLs from localStorage`);
+                }
+                
+                setLocalVideos(validVideos);
+            } catch (error) {
+                console.error('Error loading local videos:', error);
+                setLocalVideos([]);
+            }
+        } else {
+            setLocalVideos([]);
+        }
+    };
+
+    const saveLocalVideo = (videoData) => {
+        // Only save videos with valid HTTP URLs
+        if (!videoData.video_url || (!videoData.video_url.startsWith('http://') && !videoData.video_url.startsWith('https://'))) {
+            console.warn('Skipping save of video with invalid URL:', videoData.video_url);
+            return;
+        }
+        
+        const stored = localStorage.getItem('webtube_videos') || '[]';
+        const localVids = JSON.parse(stored);
+        localVids.push(videoData);
+        localStorage.setItem('webtube_videos', JSON.stringify(localVids));
+        setLocalVideos(localVids);
+    };
 
     const handleFileUpload = async (file) => {
         if (!file) return;
@@ -49,7 +82,7 @@ function WebTubeApp() {
             return;
         }
         
-        if (file.size > 100 * 1024 * 1024) {
+        if (file.size > 100 * 1024 * 1024) { // 100MB limit
             setError('Video file too large (max 100MB)');
             return;
         }
@@ -64,23 +97,26 @@ function WebTubeApp() {
         setUploadProgress({ progress: 10, status: 'Processing video...' });
 
         try {
+            // Extract frames for moderation
             console.log('Extracting frames...');
             const frames = await extractVideoFramesFromUrl(URL.createObjectURL(file));
             console.log('Extracted frames:', frames.length);
             
-            let ageRating = 'E';
+            let ageRating = 'E'; // Default rating
             if (frames.length > 0) {
                 ageRating = await moderateContent(frames, setUploadProgress);
             }
 
             setUploadProgress({ progress: 80, status: 'Uploading video...' });
 
+            // Upload the video file with retry logic
             let videoUrl;
             try {
-                videoUrl = await uploadWithRetry(file, 3, 1000, setUploadProgress);
+                videoUrl = await uploadWithRetry(file, 3, 1000, setUploadProgress); // 3 retry attempts
                 if (!videoUrl || typeof videoUrl !== 'string') {
                     throw new Error('Upload failed - invalid response');
                 }
+                // Ensure we only accept HTTP URLs, not blob URLs
                 if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
                     throw new Error('Upload failed - received invalid URL format');
                 }
@@ -91,8 +127,10 @@ function WebTubeApp() {
 
             console.log('Upload successful, URL:', videoUrl);
             
+            // Get video duration
             const duration = await getVideoDuration(file);
 
+            // Create video record
             const videoData = {
                 title: uploadForm.title.trim(),
                 description: uploadForm.description.trim(),
@@ -103,17 +141,20 @@ function WebTubeApp() {
                 age_rating: ageRating
             };
 
-            saveLocalVideo(videoData, setLocalVideos);
+            // Save to local storage first (always works)
+            saveLocalVideo(videoData);
 
+            // Try to save to database with retries
             try {
                 console.log('Creating database record...');
-                await createDatabaseRecord(room, videoData, 3, setUploadProgress);
+                await createDatabaseRecord(videoData, 3, setUploadProgress, room);
                 setUploadProgress({ progress: 100, status: 'Upload complete!' });
             } catch (dbError) {
                 console.warn('Database save failed, but video saved locally:', dbError.message);
                 setUploadProgress({ progress: 100, status: 'Upload complete! (Saved locally - use resync to add to database)' });
             }
             
+            // Reset form
             setUploadForm({ title: '', description: '' });
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
@@ -143,8 +184,9 @@ function WebTubeApp() {
     };
 
     const getUserVideos = () => {
-        const currentUser = 'guest';
-        return localVideos;
+        // Get current user's username (you can implement proper auth later)
+        const currentUser = 'guest'; // For now, assume guest user
+        return localVideos; // Return all local videos as user's videos
     };
 
     const getTotalDuration = () => {
@@ -174,6 +216,7 @@ function WebTubeApp() {
             return;
         }
 
+        // Update local storage
         const stored = localStorage.getItem('webtube_videos') || '[]';
         const localVids = JSON.parse(stored);
         const updatedVids = localVids.map(video => 
@@ -184,11 +227,14 @@ function WebTubeApp() {
         localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
         setLocalVideos(updatedVids);
 
+        // If video is in database, delete and recreate it
         const databaseVideo = videos.find(v => v.video_url === editingVideo.video_url);
         if (databaseVideo) {
             try {
+                // Delete the old record
                 await room.collection('video').delete(databaseVideo.id);
                 
+                // Create new record with updated data
                 await room.collection('video').create({
                     ...databaseVideo,
                     title: editForm.title.trim(),
@@ -209,12 +255,14 @@ function WebTubeApp() {
             return;
         }
 
+        // Remove from local storage
         const stored = localStorage.getItem('webtube_videos') || '[]';
         const localVids = JSON.parse(stored);
         const updatedVids = localVids.filter(v => v.video_url !== video.video_url);
         localStorage.setItem('webtube_videos', JSON.stringify(updatedVids));
         setLocalVideos(updatedVids);
 
+        // If video is in database, try to remove it (might fail due to permissions)
         const databaseVideo = videos.find(v => v.video_url === video.video_url);
         if (databaseVideo) {
             room.collection('video').delete(databaseVideo.id).catch(error => {
@@ -227,24 +275,25 @@ function WebTubeApp() {
         try {
             console.log('Resyncing video:', localVideo.title);
             
+            // Re-extract frames and moderate content
             const frames = await extractVideoFramesFromUrl(localVideo.video_url);
             console.log('Re-extracted frames for resync:', frames.length);
             
-            let ageRating = 'E';
+            let ageRating = 'E'; // Default rating
             if (frames.length > 0) {
                 ageRating = await moderateContent(frames, setUploadProgress);
                 console.log('New age rating for resync:', ageRating);
             }
             
-            await createDatabaseRecord(room, {
+            await createDatabaseRecord({
                 title: localVideo.title,
                 description: localVideo.description,
                 video_url: localVideo.video_url,
                 duration: localVideo.duration,
                 file_size: localVideo.file_size,
                 thumbnail_url: localVideo.thumbnail_url,
-                age_rating: ageRating
-            }, 3, setUploadProgress);
+                age_rating: ageRating // Use the newly calculated age rating
+            }, 3, setUploadProgress, room);
             
             console.log('Video resynced successfully with new age rating:', ageRating);
         } catch (error) {
@@ -258,97 +307,7 @@ function WebTubeApp() {
         return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
     };
 
-    return (
-        <div className="app">
-            <header className="header">
-                <div className="logo">
-                    📺 WebTube
-                </div>
-                <div style={{fontSize: '14px', color: '#aaa'}}>
-                    Powered by WebSim
-                </div>
-            </header>
-
-            <div className="tabs">
-                <button 
-                    className={`tab ${activeTab === 'browse' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('browse')}
-                >
-                    🏠 Browse
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('dashboard')}
-                >
-                    📊 Creator Dashboard
-                </button>
-            </div>
-
-            {activeTab === 'browse' && (
-                <BrowseTab 
-                    uploadForm={uploadForm}
-                    setUploadForm={setUploadForm}
-                    uploading={uploading}
-                    handleDrop={handleDrop}
-                    handleDragOver={handleDragOver}
-                    fileInputRef={fileInputRef}
-                    handleFileUpload={handleFileUpload}
-                    uploadProgress={uploadProgress}
-                    error={error}
-                    getLocalVideosNotInDatabase={getLocalVideosNotInDatabase}
-                    resyncVideo={resyncVideo}
-                    videos={videos}
-                    setSelectedVideo={setSelectedVideo}
-                    formatDuration={formatDuration}
-                    formatFileSize={formatFileSize}
-                />
-            )}
-            {activeTab === 'dashboard' && (
-                <CreatorDashboard 
-                    getUserVideos={getUserVideos}
-                    getTotalDuration={getTotalDuration}
-                    getTotalFileSize={getTotalFileSize}
-                    getLocalVideosNotInDatabase={getLocalVideosNotInDatabase}
-                    videos={videos}
-                    openEditModal={openEditModal}
-                    resyncVideo={resyncVideo}
-                    deleteVideo={deleteVideo}
-                    formatDuration={formatDuration}
-                    formatFileSize={formatFileSize}
-                />
-            )}
-
-            {selectedVideo && (
-                <VideoModal 
-                    selectedVideo={selectedVideo}
-                    setSelectedVideo={setSelectedVideo}
-                    formatDuration={formatDuration}
-                    formatFileSize={formatFileSize}
-                />
-            )}
-
-            {editingVideo && (
-                <EditModal 
-                    editingVideo={editingVideo}
-                    editForm={editForm}
-                    setEditForm={setEditForm}
-                    closeEditModal={closeEditModal}
-                    saveVideoEdit={saveVideoEdit}
-                />
-            )}
-        </div>
-    );
-}
-
-function BrowseTab(props) {
-    const { 
-        uploadForm, setUploadForm, uploading, handleDrop, handleDragOver, 
-        fileInputRef, handleFileUpload, uploadProgress, error, 
-        getLocalVideosNotInDatabase, resyncVideo, videos, setSelectedVideo,
-        formatDuration, formatFileSize 
-    } = props;
-
-    return (
+    const renderBrowseTab = () => (
         <div className="tab-content">
             <div className="warning-banner">
                 ⚠️ Videos are temporarily stored in our database due to entry limits. 
@@ -427,15 +386,40 @@ function BrowseTab(props) {
                     </div>
                     <div className="videos-grid">
                         {getLocalVideosNotInDatabase().map((video, index) => (
-                            <VideoCard 
-                                key={index} 
-                                video={video} 
-                                onVideoClick={setSelectedVideo}
-                                onResyncClick={resyncVideo}
-                                formatDuration={formatDuration}
-                                formatFileSize={formatFileSize}
-                                showResyncButton={true}
-                            />
+                            <div key={index} className="video-card" onClick={() => setSelectedVideo(video)}>
+                                {video.thumbnail_url && (
+                                    <img 
+                                        src={video.thumbnail_url} 
+                                        alt={video.title}
+                                        className="video-thumbnail"
+                                    />
+                                )}
+                                <div className="video-info">
+                                    <div className="video-title">{video.title}</div>
+                                    <div className="video-meta">
+                                        <span>{formatDuration(video.duration)}</span>
+                                        <span>•</span>
+                                        <span>{formatFileSize(video.file_size)}</span>
+                                        {video.age_rating && (
+                                            <>
+                                                <span>•</span>
+                                                <span style={{background: '#333', padding: '2px 6px', borderRadius: '4px', fontSize: '11px'}}>
+                                                    {video.age_rating}
+                                                </span>
+                                            </>
+                                        )}
+                                        <button 
+                                            className="resync-btn"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                resyncVideo(video);
+                                            }}
+                                        >
+                                            Resync
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -447,262 +431,238 @@ function BrowseTab(props) {
                 </div>
                 <div className="videos-grid">
                     {videos.map((video) => (
-                        <VideoCard 
-                            key={video.id} 
-                            video={video} 
-                            onVideoClick={setSelectedVideo}
-                            formatDuration={formatDuration}
-                            formatFileSize={formatFileSize}
-                            showResyncButton={false}
-                        />
+                        <div key={video.id} className="video-card" onClick={() => setSelectedVideo(video)}>
+                            {video.thumbnail_url && (
+                                <img 
+                                    src={video.thumbnail_url} 
+                                    alt={video.title}
+                                    className="video-thumbnail"
+                                />
+                            )}
+                            <div className="video-info">
+                                <div className="video-title">{video.title}</div>
+                                <div className="video-meta">
+                                    <img 
+                                        src={`https://images.websim.com/avatar/${video.username}`}
+                                        alt={video.username}
+                                        className="user-avatar"
+                                    />
+                                    <span>{video.username}</span>
+                                    <span>•</span>
+                                    <span>{formatDuration(video.duration)}</span>
+                                    <span>•</span>
+                                    <span>{formatFileSize(video.file_size)}</span>
+                                    {video.age_rating && (
+                                        <>
+                                            <span>•</span>
+                                            <span style={{background: '#333', padding: '2px 6px', borderRadius: '4px', fontSize: '11px'}}>
+                                                {video.age_rating}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     ))}
                 </div>
             </div>
         </div>
     );
-}
 
-function CreatorDashboard(props) {
-    const { 
-        getUserVideos, getTotalDuration, getTotalFileSize, 
-        getLocalVideosNotInDatabase, videos, openEditModal, 
-        resyncVideo, deleteVideo, formatDuration, formatFileSize 
-    } = props;
+    const renderCreatorDashboard = () => {
+        const userVideos = getUserVideos();
+        const totalDuration = getTotalDuration();
+        const totalSize = getTotalFileSize();
 
-    const userVideos = getUserVideos();
-    const totalDuration = getTotalDuration();
-    const totalSize = getTotalFileSize();
+        return (
+            <div className="tab-content">
+                <div className="creator-dashboard">
+                    <h2 style={{marginBottom: '24px', color: '#fff'}}>📊 Creator Dashboard</h2>
+                    
+                    <div className="dashboard-stats">
+                        <div className="stat-card">
+                            <div className="stat-number">{userVideos.length}</div>
+                            <div className="stat-label">Total Videos</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-number">{formatDuration(totalDuration)}</div>
+                            <div className="stat-label">Total Duration</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-number">{formatFileSize(totalSize)}</div>
+                            <div className="stat-label">Total Size</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-number">{getLocalVideosNotInDatabase().length}</div>
+                            <div className="stat-label">Pending Sync</div>
+                        </div>
+                    </div>
 
-    return (
-        <div className="tab-content">
-            <div className="creator-dashboard">
-                <h2 style={{marginBottom: '24px', color: '#fff'}}>📊 Creator Dashboard</h2>
-                
-                <div className="dashboard-stats">
-                    <div className="stat-card">
-                        <div className="stat-number">{userVideos.length}</div>
-                        <div className="stat-label">Total Videos</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-number">{formatDuration(totalDuration)}</div>
-                        <div className="stat-label">Total Duration</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-number">{formatFileSize(totalSize)}</div>
-                        <div className="stat-label">Total Size</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-number">{getLocalVideosNotInDatabase().length}</div>
-                        <div className="stat-label">Pending Sync</div>
-                    </div>
+                    <h3 style={{marginBottom: '16px', color: '#fff'}}>📁 My Videos</h3>
+                    
+                    {userVideos.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-state-icon">📹</div>
+                            <h3>No videos uploaded yet</h3>
+                            <p>Switch to the Browse tab to upload your first video!</p>
+                        </div>
+                    ) : (
+                        <div className="my-videos-list">
+                            {userVideos.map((video, index) => {
+                                const isInDatabase = videos.some(v => v.video_url === video.video_url);
+                                return (
+                                    <div key={index} className="video-item">
+                                        {video.thumbnail_url && (
+                                            <img 
+                                                src={video.thumbnail_url} 
+                                                alt={video.title}
+                                                className="video-item-thumbnail"
+                                            />
+                                        )}
+                                        <div className="video-item-info">
+                                            <div className="video-item-title">{video.title}</div>
+                                            <div className="video-item-meta">
+                                                {formatDuration(video.duration)} • {formatFileSize(video.file_size)}
+                                                {video.age_rating && ` • Rated ${video.age_rating}`}
+                                                {!isInDatabase && (
+                                                    <span style={{color: '#ff6b35', marginLeft: '8px'}}>
+                                                        • Not in database
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {video.description && (
+                                                <div className="video-item-description">
+                                                    {video.description.length > 100 
+                                                        ? video.description.substring(0, 100) + '...' 
+                                                        : video.description}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="video-item-actions">
+                                            <button 
+                                                className="btn-small btn-edit"
+                                                onClick={() => openEditModal(video)}
+                                            >
+                                                ✏️ Edit
+                                            </button>
+                                            {!isInDatabase && (
+                                                <button 
+                                                    className="btn-small resync-btn"
+                                                    onClick={() => resyncVideo(video)}
+                                                >
+                                                    🔄 Sync
+                                                </button>
+                                            )}
+                                            <button 
+                                                className="btn-small btn-delete"
+                                                onClick={() => deleteVideo(video)}
+                                            >
+                                                🗑️ Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
-
-                <h3 style={{marginBottom: '16px', color: '#fff'}}>📁 My Videos</h3>
-                
-                {userVideos.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-state-icon">📹</div>
-                        <h3>No videos uploaded yet</h3>
-                        <p>Switch to the Browse tab to upload your first video!</p>
-                    </div>
-                ) : (
-                    <div className="my-videos-list">
-                        {userVideos.map((video, index) => {
-                            const isInDatabase = videos.some(v => v.video_url === video.video_url);
-                            return (
-                                <VideoListItem 
-                                    key={index}
-                                    video={video}
-                                    isInDatabase={isInDatabase}
-                                    onEdit={openEditModal}
-                                    onResync={resyncVideo}
-                                    onDelete={deleteVideo}
-                                    formatDuration={formatDuration}
-                                    formatFileSize={formatFileSize}
-                                />
-                            );
-                        })}
-                    </div>
-                )}
             </div>
-        </div>
-    );
-}
+        );
+    };
 
-function VideoCard({ video, onVideoClick, onResyncClick, formatDuration, formatFileSize, showResyncButton }) {
     return (
-        <div className="video-card" onClick={() => onVideoClick(video)}>
-            {video.thumbnail_url && (
-                <img 
-                    src={video.thumbnail_url} 
-                    alt={video.title}
-                    className="video-thumbnail"
-                />
-            )}
-            <div className="video-info">
-                <div className="video-title">{video.title}</div>
-                <div className="video-meta">
-                    {video.username && (
-                        <>
-                            <img 
-                                src={`https://images.websim.com/avatar/${video.username}`}
-                                alt={video.username}
-                                className="user-avatar"
-                            />
-                            <span>{video.username}</span>
-                            <span>•</span>
-                        </>
-                    )}
-                    <span>{formatDuration(video.duration)}</span>
-                    <span>•</span>
-                    <span>{formatFileSize(video.file_size)}</span>
-                    {video.age_rating && (
-                        <>
-                            <span>•</span>
-                            <span style={{background: '#333', padding: '2px 6px', borderRadius: '4px', fontSize: '11px'}}>
-                                {video.age_rating}
-                            </span>
-                        </>
-                    )}
-                    {showResyncButton && (
-                        <button 
-                            className="resync-btn"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onResyncClick(video);
-                            }}
+        <div className="app">
+            <header className="header">
+                <div className="logo">
+                    📺 WebTube
+                </div>
+                <div style={{fontSize: '14px', color: '#aaa'}}>
+                    Powered by WebSim
+                </div>
+            </header>
+
+            <div className="tabs">
+                <button 
+                    className={`tab ${activeTab === 'browse' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('browse')}
+                >
+                    🏠 Browse
+                </button>
+                <button 
+                    className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('dashboard')}
+                >
+                    📊 Creator Dashboard
+                </button>
+            </div>
+
+            {activeTab === 'browse' && renderBrowseTab()}
+            {activeTab === 'dashboard' && renderCreatorDashboard()}
+
+            {selectedVideo && (
+                <div className="modal" onClick={() => setSelectedVideo(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="close-btn" onClick={() => setSelectedVideo(null)}>×</div>
+                        <video 
+                            className="video-player" 
+                            controls 
+                            autoPlay
+                            src={selectedVideo.video_url}
                         >
-                            Resync
-                        </button>
-                    )}
+                            Your browser does not support the video tag.
+                        </video>
+                        <h3 style={{marginTop: '16px'}}>{selectedVideo.title}</h3>
+                        {selectedVideo.description && (
+                            <p style={{color: '#aaa', marginTop: '8px'}}>{selectedVideo.description}</p>
+                        )}
+                        <div style={{color: '#aaa', fontSize: '12px', marginTop: '8px'}}>
+                            Uploaded by {selectedVideo.username} • {formatDuration(selectedVideo.duration)} • {formatFileSize(selectedVideo.file_size)}
+                            {selectedVideo.age_rating && ` • Rated ${selectedVideo.age_rating}`}
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-    );
-}
-
-function VideoListItem({ video, isInDatabase, onEdit, onResync, onDelete, formatDuration, formatFileSize }) {
-    return (
-        <div className="video-item">
-            {video.thumbnail_url && (
-                <img 
-                    src={video.thumbnail_url} 
-                    alt={video.title}
-                    className="video-item-thumbnail"
-                />
             )}
-            <div className="video-item-info">
-                <div className="video-item-title">{video.title}</div>
-                <div className="video-item-meta">
-                    {formatDuration(video.duration)} • {formatFileSize(video.file_size)}
-                    {video.age_rating && ` • Rated ${video.age_rating}`}
-                    {!isInDatabase && (
-                        <span style={{color: '#ff6b35', marginLeft: '8px'}}>
-                            • Not in database
-                        </span>
-                    )}
-                </div>
-                {video.description && (
-                    <div className="video-item-description">
-                        {video.description.length > 100 
-                            ? video.description.substring(0, 100) + '...' 
-                            : video.description}
+
+            {editingVideo && (
+                <div className="edit-modal" onClick={closeEditModal}>
+                    <div className="edit-modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="close-btn" onClick={closeEditModal}>×</div>
+                        <h3 style={{marginBottom: '16px', color: '#fff'}}>Edit Video</h3>
+                        
+                        <div className="edit-form">
+                            <div className="input-group">
+                                <label htmlFor="edit-title">Title *</label>
+                                <input
+                                    type="text"
+                                    id="edit-title"
+                                    value={editForm.title}
+                                    onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                                    placeholder="Enter video title..."
+                                />
+                            </div>
+
+                            <div className="input-group">
+                                <label htmlFor="edit-description">Description</label>
+                                <textarea
+                                    id="edit-description"
+                                    value={editForm.description}
+                                    onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                                    placeholder="Enter video description..."
+                                />
+                            </div>
+                        </div>
+
+                        <div className="edit-actions">
+                            <button className="btn-cancel" onClick={closeEditModal}>
+                                Cancel
+                            </button>
+                            <button className="btn-save" onClick={saveVideoEdit}>
+                                Save Changes
+                            </button>
+                        </div>
                     </div>
-                )}
-            </div>
-            <div className="video-item-actions">
-                <button 
-                    className="btn-small btn-edit"
-                    onClick={() => onEdit(video)}
-                >
-                    ✏️ Edit
-                </button>
-                {!isInDatabase && (
-                    <button 
-                        className="btn-small resync-btn"
-                        onClick={() => onResync(video)}
-                    >
-                        🔄 Sync
-                    </button>
-                )}
-                <button 
-                    className="btn-small btn-delete"
-                    onClick={() => onDelete(video)}
-                >
-                    🗑️ Delete
-                </button>
-            </div>
+                </div>
+            )}
         </div>
     );
 }
-
-function VideoModal({ selectedVideo, setSelectedVideo, formatDuration, formatFileSize }) {
-    return (
-        <div className="modal" onClick={() => setSelectedVideo(null)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="close-btn" onClick={() => setSelectedVideo(null)}>×</div>
-                <video 
-                    className="video-player" 
-                    controls 
-                    autoPlay
-                    src={selectedVideo.video_url}
-                >
-                    Your browser does not support the video tag.
-                </video>
-                <h3 style={{marginTop: '16px'}}>{selectedVideo.title}</h3>
-                {selectedVideo.description && (
-                    <p style={{color: '#aaa', marginTop: '8px'}}>{selectedVideo.description}</p>
-                )}
-                <div style={{color: '#aaa', fontSize: '12px', marginTop: '8px'}}>
-                    Uploaded by {selectedVideo.username} • {formatDuration(selectedVideo.duration)} • {formatFileSize(selectedVideo.file_size)}
-                    {selectedVideo.age_rating && ` • Rated ${selectedVideo.age_rating}`}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function EditModal({ editingVideo, editForm, setEditForm, closeEditModal, saveVideoEdit }) {
-    return (
-        <div className="edit-modal" onClick={closeEditModal}>
-            <div className="edit-modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="close-btn" onClick={closeEditModal}>×</div>
-                <h3 style={{marginBottom: '16px', color: '#fff'}}>Edit Video</h3>
-                
-                <div className="edit-form">
-                    <div className="input-group">
-                        <label htmlFor="edit-title">Title *</label>
-                        <input
-                            type="text"
-                            id="edit-title"
-                            value={editForm.title}
-                            onChange={(e) => setEditForm({...editForm, title: e.target.value})}
-                            placeholder="Enter video title..."
-                        />
-                    </div>
-
-                    <div className="input-group">
-                        <label htmlFor="edit-description">Description</label>
-                        <textarea
-                            id="edit-description"
-                            value={editForm.description}
-                            onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                            placeholder="Enter video description..."
-                        />
-                    </div>
-                </div>
-
-                <div className="edit-actions">
-                    <button className="btn-cancel" onClick={closeEditModal}>
-                        Cancel
-                    </button>
-                    <button className="btn-save" onClick={saveVideoEdit}>
-                        Save Changes
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-window.WebTubeApp = WebTubeApp;
