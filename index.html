@@ -633,6 +633,155 @@
             margin-bottom: 16px;
             opacity: 0.5;
         }
+
+        .live-section {
+            padding: 24px;
+            background: rgba(24, 24, 24, 0.8);
+            backdrop-filter: blur(10px);
+            margin: 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 20, 20, 0.3);
+            box-shadow: 0 8px 32px rgba(255, 20, 20, 0.1);
+        }
+
+        .live-controls {
+            background: rgba(33, 33, 33, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 20, 20, 0.2);
+        }
+
+        .live-preview {
+            width: 100%;
+            max-width: 400px;
+            height: 225px;
+            background: #000;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .media-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .media-btn {
+            background: rgba(48, 48, 48, 0.8);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            border: 1px solid rgba(255, 20, 20, 0.3);
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .media-btn:hover {
+            background: rgba(68, 68, 68, 0.8);
+            border-color: rgba(255, 20, 20, 0.5);
+            box-shadow: 0 0 20px rgba(255, 20, 20, 0.2);
+        }
+
+        .media-btn.active {
+            background: linear-gradient(45deg, #ff1414, #cc0000);
+            border-color: #ff1414;
+            box-shadow: 0 0 30px rgba(255, 20, 20, 0.4);
+        }
+
+        .go-live-btn {
+            background: linear-gradient(45deg, #ff1414, #cc0000);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+            margin-top: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(255, 20, 20, 0.3);
+            animation: liveGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes liveGlow {
+            0%, 100% { 
+                box-shadow: 0 4px 20px rgba(255, 20, 20, 0.3);
+            }
+            50% { 
+                box-shadow: 0 6px 30px rgba(255, 20, 20, 0.6);
+            }
+        }
+
+        .go-live-btn:hover {
+            background: linear-gradient(45deg, #cc0000, #990000);
+            box-shadow: 0 6px 30px rgba(255, 20, 20, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .go-live-btn:disabled {
+            background: rgba(102, 102, 102, 0.8);
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+            animation: none;
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(45deg, #ff1414, #cc0000);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            animation: livePulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: #fff;
+            border-radius: 50%;
+        }
+
+        .stream-info {
+            background: rgba(33, 33, 33, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+            border: 1px solid rgba(255, 20, 20, 0.2);
+        }
+
+        .stream-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .live-video-card {
+            border: 2px solid rgba(255, 20, 20, 0.4);
+            box-shadow: 0 0 20px rgba(255, 20, 20, 0.2);
+        }
+
+        .live-video-card .video-title::before {
+            content: "🔴 LIVE • ";
+            color: #ff1414;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -655,7 +804,21 @@
             const [activeTab, setActiveTab] = useState('browse');
             const [editingVideo, setEditingVideo] = useState(null);
             const [editForm, setEditForm] = useState({ title: '', description: '' });
+            
+            // Live streaming state
+            const [isLive, setIsLive] = useState(false);
+            const [mediaStream, setMediaStream] = useState(null);
+            const [mediaRecorder, setMediaRecorder] = useState(null);
+            const [liveTitle, setLiveTitle] = useState('');
+            const [mediaSource, setMediaSource] = useState('camera'); // 'camera' or 'screen'
+            const [liveStats, setLiveStats] = useState({ chunks: 0, duration: 0 });
+            const [availableCameras, setAvailableCameras] = useState([]);
+            const [selectedCamera, setSelectedCamera] = useState('');
+            
             const fileInputRef = useRef();
+            const videoPreviewRef = useRef();
+            const recordingChunks = useRef([]);
+            const liveInterval = useRef(null);
 
             // Subscribe to video records
             const videoRecords = React.useSyncExternalStore(
@@ -666,6 +829,7 @@
             useEffect(() => {
                 setVideos(videoRecords.reverse()); // Show newest first
                 loadLocalVideos();
+                loadAvailableCameras();
             }, [videoRecords]);
 
             const loadLocalVideos = () => {
@@ -1201,6 +1365,167 @@ Respond with JSON only: {
                 return localVideos.filter(lv => !databaseUrls.has(lv.video_url));
             };
 
+            const loadAvailableCameras = async () => {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const cameras = devices.filter(device => device.kind === 'videoinput');
+                    setAvailableCameras(cameras);
+                    if (cameras.length > 0 && !selectedCamera) {
+                        setSelectedCamera(cameras[0].deviceId);
+                    }
+                } catch (error) {
+                    console.error('Error loading cameras:', error);
+                }
+            };
+
+            // Live streaming functions
+            const startMediaCapture = async () => {
+                try {
+                    let stream;
+                    
+                    if (mediaSource === 'camera') {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { deviceId: selectedCamera },
+                            audio: true
+                        });
+                    } else {
+                        stream = await navigator.mediaDevices.getDisplayMedia({
+                            video: true,
+                            audio: true
+                        });
+                    }
+                    
+                    setMediaStream(stream);
+                    if (videoPreviewRef.current) {
+                        videoPreviewRef.current.srcObject = stream;
+                    }
+                    
+                    return stream;
+                } catch (error) {
+                    console.error('Error accessing media:', error);
+                    setError('Unable to access camera/screen. Please check permissions.');
+                    throw error;
+                }
+            };
+
+            const stopMediaCapture = () => {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    setMediaStream(null);
+                }
+                if (videoPreviewRef.current) {
+                    videoPreviewRef.current.srcObject = null;
+                }
+            };
+
+            const startLiveStream = async () => {
+                if (!liveTitle.trim()) {
+                    setError('Please enter a title for your live stream');
+                    return;
+                }
+
+                try {
+                    const stream = await startMediaCapture();
+                    
+                    const recorder = new MediaRecorder(stream, {
+                        mimeType: MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4'
+                    });
+                    
+                    recordingChunks.current = [];
+                    let chunkCount = 0;
+                    
+                    recorder.ondataavailable = async (event) => {
+                        if (event.data.size > 0) {
+                            recordingChunks.current.push(event.data);
+                        }
+                    };
+                    
+                    recorder.onstop = async () => {
+                        const blob = new Blob(recordingChunks.current, { type: recorder.mimeType });
+                        await uploadLiveChunk(blob, chunkCount);
+                        recordingChunks.current = [];
+                        chunkCount++;
+                    };
+                    
+                    setMediaRecorder(recorder);
+                    setIsLive(true);
+                    setError('');
+                    
+                    // Start recording first chunk
+                    recorder.start();
+                    
+                    // Set up 30-second intervals
+                    liveInterval.current = setInterval(() => {
+                        if (recorder.state === 'recording') {
+                            recorder.stop();
+                            
+                            // Start new recording immediately for seamless streaming
+                            setTimeout(() => {
+                                if (isLive) {
+                                    recorder.start();
+                                    setLiveStats(prev => ({ 
+                                        chunks: prev.chunks + 1, 
+                                        duration: prev.duration + 30 
+                                    }));
+                                }
+                            }, 100);
+                        }
+                    }, 30000); // 30 seconds
+                    
+                } catch (error) {
+                    console.error('Failed to start live stream:', error);
+                    setError('Failed to start live stream: ' + error.message);
+                }
+            };
+
+            const stopLiveStream = () => {
+                setIsLive(false);
+                
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                }
+                
+                if (liveInterval.current) {
+                    clearInterval(liveInterval.current);
+                    liveInterval.current = null;
+                }
+                
+                stopMediaCapture();
+                setMediaRecorder(null);
+                setLiveStats({ chunks: 0, duration: 0 });
+            };
+
+            const uploadLiveChunk = async (blob, chunkIndex) => {
+                try {
+                    console.log(`Uploading live chunk ${chunkIndex}`);
+                    
+                    const videoUrl = await websim.upload(blob);
+                    
+                    // Create live video record
+                    const videoData = {
+                        title: `${liveTitle} (Chunk ${chunkIndex + 1})`,
+                        description: `Live stream chunk ${chunkIndex + 1}`,
+                        video_url: videoUrl,
+                        duration: 30,
+                        file_size: blob.size,
+                        age_rating: 'E', // Live streams default to E rating
+                        is_live: true,
+                        live_sequence: chunkIndex,
+                        live_session_id: Date.now().toString() // Simple session ID
+                    };
+                    
+                    await room.collection('video').create(videoData);
+                    console.log(`Live chunk ${chunkIndex} uploaded successfully`);
+                    
+                } catch (error) {
+                    console.error(`Failed to upload live chunk ${chunkIndex}:`, error);
+                }
+            };
+
+            const getLiveVideos = () => {
+                return videos.filter(video => video.is_live);
+            };
+
             const renderBrowseTab = () => (
                 <div className="tab-content">
                     <div className="warning-banner">
@@ -1464,6 +1789,159 @@ Respond with JSON only: {
                 );
             };
 
+            const renderLiveTab = () => {
+                const liveVideos = getLiveVideos();
+                
+                return (
+                    <div className="tab-content">
+                        <div className="live-section">
+                            <h2 style={{marginBottom: '24px', color: '#fff'}}>🔴 Live Streaming</h2>
+                            
+                            <div className="live-controls">
+                                <h3 style={{marginBottom: '16px', color: '#fff'}}>Start Your Live Stream</h3>
+                                
+                                <div className="input-group">
+                                    <label htmlFor="live-title">Stream Title *</label>
+                                    <input
+                                        type="text"
+                                        id="live-title"
+                                        value={liveTitle}
+                                        onChange={(e) => setLiveTitle(e.target.value)}
+                                        placeholder="Enter your live stream title..."
+                                        disabled={isLive}
+                                    />
+                                </div>
+
+                                <div className="media-selector">
+                                    <button 
+                                        className={`media-btn ${mediaSource === 'camera' ? 'active' : ''}`}
+                                        onClick={() => setMediaSource('camera')}
+                                        disabled={isLive}
+                                    >
+                                        📹 Camera
+                                    </button>
+                                    <button 
+                                        className={`media-btn ${mediaSource === 'screen' ? 'active' : ''}`}
+                                        onClick={() => setMediaSource('screen')}
+                                        disabled={isLive}
+                                    >
+                                        🖥️ Screen Share
+                                    </button>
+                                </div>
+
+                                {mediaSource === 'camera' && availableCameras.length > 1 && (
+                                    <div className="input-group">
+                                        <label htmlFor="camera-select">Select Camera</label>
+                                        <select
+                                            id="camera-select"
+                                            value={selectedCamera}
+                                            onChange={(e) => setSelectedCamera(e.target.value)}
+                                            disabled={isLive}
+                                            style={{
+                                                width: '100%',
+                                                padding: '8px 12px',
+                                                background: 'rgba(48, 48, 48, 0.8)',
+                                                border: '1px solid rgba(255, 20, 20, 0.3)',
+                                                borderRadius: '6px',
+                                                color: '#fff',
+                                                fontSize: '14px'
+                                            }}
+                                        >
+                                            {availableCameras.map(camera => (
+                                                <option key={camera.deviceId} value={camera.deviceId}>
+                                                    {camera.label || `Camera ${camera.deviceId.slice(0, 8)}`}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <video 
+                                    ref={videoPreviewRef}
+                                    className="live-preview"
+                                    autoPlay
+                                    muted
+                                    playsInline
+                                />
+
+                                {!isLive ? (
+                                    <button 
+                                        className="go-live-btn"
+                                        onClick={startLiveStream}
+                                        disabled={!liveTitle.trim()}
+                                    >
+                                        🔴 Go Live Now
+                                    </button>
+                                ) : (
+                                    <button 
+                                        className="go-live-btn"
+                                        onClick={stopLiveStream}
+                                        style={{background: 'linear-gradient(45deg, #666, #444)'}}
+                                    >
+                                        ⏹️ Stop Stream
+                                    </button>
+                                )}
+
+                                {isLive && (
+                                    <div className="stream-info">
+                                        <div className="live-indicator">
+                                            <div className="live-dot"></div>
+                                            LIVE
+                                        </div>
+                                        <div className="stream-stats">
+                                            <span>Chunks Uploaded: {liveStats.chunks}</span>
+                                            <span>Duration: {formatDuration(liveStats.duration)}</span>
+                                            <span>Source: {mediaSource === 'camera' ? '📹 Camera' : '🖥️ Screen'}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {error && (
+                                    <div className="error-message">{error}</div>
+                                )}
+                            </div>
+
+                            <h3 style={{marginBottom: '16px', color: '#fff'}}>🔴 Currently Live ({liveVideos.length} streams)</h3>
+                            
+                            {liveVideos.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">📺</div>
+                                    <h3>No live streams at the moment</h3>
+                                    <p>Be the first to go live!</p>
+                                </div>
+                            ) : (
+                                <div className="videos-grid">
+                                    {liveVideos.map((video) => (
+                                        <div key={video.id} className="video-card live-video-card" onClick={() => setSelectedVideo(video)}>
+                                            {video.thumbnail_url && (
+                                                <img 
+                                                    src={video.thumbnail_url} 
+                                                    alt={video.title}
+                                                    className="video-thumbnail"
+                                                />
+                                            )}
+                                            <div className="video-info">
+                                                <div className="video-title">{video.title}</div>
+                                                <div className="video-meta">
+                                                    <img 
+                                                        src={`https://images.websim.com/avatar/${video.username}`}
+                                                        alt={video.username}
+                                                        className="user-avatar"
+                                                    />
+                                                    <span>{video.username}</span>
+                                                    <span>•</span>
+                                                    <span>Chunk {video.live_sequence + 1}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
             return (
                 <div className="app">
                     <header className="header">
@@ -1483,6 +1961,12 @@ Respond with JSON only: {
                             🏠 Browse
                         </button>
                         <button 
+                            className={`tab ${activeTab === 'live' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('live')}
+                        >
+                            🔴 Live Streams
+                        </button>
+                        <button 
                             className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
                             onClick={() => setActiveTab('dashboard')}
                         >
@@ -1491,6 +1975,7 @@ Respond with JSON only: {
                     </div>
 
                     {activeTab === 'browse' && renderBrowseTab()}
+                    {activeTab === 'live' && renderLiveTab()}
                     {activeTab === 'dashboard' && renderCreatorDashboard()}
 
                     {selectedVideo && (
